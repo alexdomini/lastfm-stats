@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Last.fm Stats — {{ username }}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d0d1a; --bg2: #141428; --bg3: #1c1c38;
+    --acc: #e31c26; --acc2: #ff6b35; --text: #e8e8f0; --muted: #7070a0;
+    --border: #2a2a4a; --radius: 10px;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+  header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 28px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .logo { font-size: 1.5rem; font-weight: 700; color: var(--acc); letter-spacing: -0.5px; }
+  .logo span { color: var(--text); }
+
+  .sync-area { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .sync-info { font-size: 0.75rem; color: var(--muted); }
+
+  #btnSync, #btnCorrect { background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 16px; border-radius: 6px; font-size: 0.85rem; cursor: pointer;
+    display: flex; align-items: center; gap: 7px; transition: background 0.15s; white-space: nowrap; }
+  #btnSync:hover:not(:disabled), #btnCorrect:hover:not(:disabled) { background: #252545; }
+  #btnSync:disabled, #btnCorrect:disabled { opacity: 0.5; cursor: not-allowed; }
+  #btnSync .dot, #btnCorrect .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  #btnSync.syncing .dot, #btnCorrect.syncing .dot { background: var(--acc2); animation: pulse 1s infinite; }
+  #btnSync.done .dot, #btnCorrect.done .dot { background: #4caf50; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+  .sync-progress { display: none; flex-direction: column; gap: 4px; min-width: 220px; }
+  .sync-progress.visible { display: flex; }
+  .sync-progress-bar-wrap { background: var(--bg3); border-radius: 4px; height: 5px; overflow: hidden; }
+  .sync-progress-bar { height: 100%; background: var(--acc2); border-radius: 4px; transition: width 0.3s; width: 0%; }
+  .sync-progress-msg { font-size: 0.72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  nav { display: flex; gap: 4px; padding: 12px 28px; background: var(--bg2); border-bottom: 1px solid var(--border); overflow-x: auto; }
+  nav a { padding: 6px 14px; border-radius: 6px; color: var(--muted); text-decoration: none; font-size: 0.875rem; white-space: nowrap; transition: background 0.15s, color 0.15s; }
+  nav a:hover, nav a.active { background: var(--bg3); color: var(--text); }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
+
+  .section { display: none; }
+  .section.active { display: block; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; text-align: center; }
+  .stat-card .val { font-size: 2rem; font-weight: 700; color: var(--acc); }
+  .stat-card .lbl { font-size: 0.75rem; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+
+  .chart-wrap { position: relative; width: 100%; }
+  .chart-wrap.tall { height: 340px; }
+  .chart-wrap.short { height: 260px; }
+
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .controls label { font-size: 0.8rem; color: var(--muted); }
+  .controls input, .controls select { background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 5px 10px; border-radius: 6px; font-size: 0.85rem; }
+  .controls button { background: var(--acc); color: #fff; border: none; padding: 6px 16px; border-radius: 6px; font-size: 0.85rem; cursor: pointer; }
+  .controls button:hover { background: #c1151e; }
+
+  .rank-list { list-style: none; }
+  .rank-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+  .rank-list li:last-child { border-bottom: none; }
+  .rank-num { width: 24px; text-align: right; color: var(--muted); font-size: 0.8rem; flex-shrink: 0; }
+  .rank-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-sub { font-size: 0.75rem; color: var(--muted); }
+  .rank-bar-wrap { width: 120px; flex-shrink: 0; }
+  .rank-bar { height: 6px; border-radius: 3px; background: var(--acc); }
+  .rank-count { width: 48px; text-align: right; color: var(--muted); font-size: 0.8rem; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+  .empty { text-align: center; padding: 40px; color: var(--muted); font-size: 0.9rem; }
+  .empty a { color: var(--acc); }
+
+  /* ── trending ── */
+  .trend-row { display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); }
+  .trend-row:last-child { border:none; }
+  .trend-name { flex:1; font-size:.875rem; min-width:0; }
+  .trend-name .sub { font-size:.72rem; color:var(--muted); }
+  .trend-spark { display:flex; align-items:flex-end; gap:2px; height:28px; flex-shrink:0; }
+  .trend-spark span { display:block; width:6px; border-radius:2px 2px 0 0; background:var(--acc); opacity:.7; min-height:2px; }
+  .trend-spark span.last { background:var(--acc2); opacity:1; }
+  .trend-badge { font-size:.8rem; font-weight:700; color:#4caf50; white-space:nowrap; flex-shrink:0; min-width:52px; text-align:right; }
+  .trend-total { font-size:.75rem; color:var(--muted); white-space:nowrap; flex-shrink:0; min-width:60px; text-align:right; }
+
+  /* ── artist modal ── */
+  .modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:100; align-items:center; justify-content:center; }
+  .modal-backdrop.open { display:flex; }
+  .modal { background:var(--bg2); border:1px solid var(--border); border-radius:12px; width:min(700px,95vw); max-height:88vh; overflow-y:auto; display:flex; flex-direction:column; }
+  .modal-header { padding:20px 24px 16px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg2); z-index:1; display:flex; align-items:flex-start; gap:12px; }
+  .modal-header h2 { font-size:1.4rem; font-weight:700; flex:1; }
+  .modal-close { background:none; border:none; color:var(--muted); font-size:1.5rem; cursor:pointer; line-height:1; padding:0 4px; }
+  .modal-close:hover { color:var(--text); }
+  .modal-body { padding:20px 24px; display:flex; flex-direction:column; gap:20px; }
+  .modal-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; }
+  .modal-stat { background:var(--bg3); border-radius:8px; padding:12px; text-align:center; }
+  .modal-stat .v { font-size:1.3rem; font-weight:700; color:var(--acc); }
+  .modal-stat .l { font-size:0.7rem; color:var(--muted); text-transform:uppercase; margin-top:2px; }
+  .modal-section h3 { font-size:0.85rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
+  .artist-link { color:inherit; text-decoration:none; cursor:pointer; border-bottom:1px dashed var(--muted); }
+  .artist-link:hover { color:var(--acc); border-bottom-color:var(--acc); }
+  .album-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:0.875rem; }
+  .album-row:last-child { border:none; }
+  .album-rank { width:20px; text-align:right; color:var(--muted); font-size:.8rem; flex-shrink:0; }
+  .album-info { flex:1; overflow:hidden; }
+  .album-name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .album-meta { font-size:.72rem; color:var(--muted); margin-top:2px; }
+  .album-score-wrap { display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0; }
+  .album-score { font-size:.8rem; font-weight:700; color:var(--acc2); }
+  .sparkline-wrap { height:60px; }
+  .loading-dots::after { content:'...'; animation:dots 1.2s infinite; }
+  @keyframes dots { 0%{content:'.'} 40%{content:'..'} 80%{content:'...'} }
+
+  footer { border-top: 1px solid var(--border); padding: 16px 28px; display: flex; justify-content: center; }
+  .lfm-badge { display: inline-flex; align-items: center; gap: 0; border-radius: 5px; overflow: hidden; text-decoration: none; font-size: 0.75rem; font-weight: 600; line-height: 1; }
+  .lfm-badge .powered { background: #222; color: #aaa; padding: 5px 8px; }
+  .lfm-badge .by { background: #e31c26; color: #fff; padding: 5px 10px; display: flex; align-items: center; gap: 6px; }
+  .lfm-badge .by svg { flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">last<span>.fm</span> stats</div>
+  <div style="color:var(--muted); font-size:0.9rem">{{ username }}</div>
+  <div class="sync-area">
+    <div class="sync-progress" id="syncProgress">
+      <div class="sync-progress-bar-wrap"><div class="sync-progress-bar" id="syncBar"></div></div>
+      <div class="sync-progress-msg" id="syncMsg"></div>
+    </div>
+    <div class="sync-info" id="syncInfo">{% if last_sync %}Last sync: {{ last_sync }}{% endif %}</div>
+    <button id="btnCorrect" onclick="startCorrect()" title="Fix artist names using Last.fm corrections">
+      <span class="dot"></span> Fix Artist Names
+    </button>
+    <button id="btnSync" onclick="startSync()">
+      <span class="dot"></span> Sync
+    </button>
+  </div>
+</header>
+
+<nav>
+  <a href="#" class="active" data-section="overview">Overview</a>
+  <a href="#" data-section="timeline">Timeline</a>
+  <a href="#" data-section="tops">Top Artists / Albums / Tracks</a>
+  <a href="#" data-section="patterns">Listening Patterns</a>
+  <a href="#" data-section="trending">Trending</a>
+  <a href="#" data-section="wrapped">Wrapped</a>
+</nav>
+
+<main>
+
+<!-- OVERVIEW -->
+<div id="sec-overview" class="section active">
+  {% if overview.total == 0 %}
+  <div class="empty">
+    <p style="font-size:1.1rem; margin-bottom:12px">No data yet.</p>
+    <p>Click <strong>Sync</strong> to download your Last.fm history.</p>
+  </div>
+  {% else %}
+  <div class="stat-grid">
+    <div class="stat-card"><div class="val">{{ "{:,}".format(overview.total) }}</div><div class="lbl">Scrobbles</div></div>
+    <div class="stat-card"><div class="val">{{ "{:,}".format(overview.artists) }}</div><div class="lbl">Artists</div></div>
+    <div class="stat-card"><div class="val">{{ "{:,}".format(overview.albums) }}</div><div class="lbl">Albums</div></div>
+    <div class="stat-card"><div class="val">{{ "{:,}".format(overview.tracks) }}</div><div class="lbl">Tracks</div></div>
+    {% if first %}<div class="stat-card"><div class="val" style="font-size:1.1rem">{{ first }}</div><div class="lbl">Listening since</div></div>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Scrobbles per year</h2>
+    <div class="chart-wrap short"><canvas id="chartYears"></canvas></div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <h2>Top 10 artists (all time)</h2>
+      <ul class="rank-list" id="listTopArtistsOv"></ul>
+    </div>
+    <div class="card">
+      <h2>Top 10 tracks (all time)</h2>
+      <ul class="rank-list" id="listTopTracksOv"></ul>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- TIMELINE -->
+<div id="sec-timeline" class="section">
+  <div class="card">
+    <h2>Scrobbles per month</h2>
+    <div class="controls">
+      <label>Year:</label>
+      <select id="timelineYear">
+        <option value="">All</option>
+        {% for y in years %}<option value="{{ y }}">{{ y }}</option>{% endfor %}
+      </select>
+      <button onclick="loadTimeline()">Apply</button>
+    </div>
+    <div class="chart-wrap tall"><canvas id="chartTimeline"></canvas></div>
+  </div>
+</div>
+
+<!-- TOPS -->
+<div id="sec-tops" class="section">
+  <div class="card">
+    <div class="controls">
+      <label>From:</label><input type="date" id="topsFrom">
+      <label>To:</label><input type="date" id="topsTo">
+      <label>Top:</label>
+      <select id="topsLimit">
+        <option value="10">10</option>
+        <option value="20" selected>20</option>
+        <option value="50">50</option>
+      </select>
+      <button onclick="loadTops()">Apply</button>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card"><h2>Top Artists <span style="color:var(--muted);font-weight:400;font-size:0.8rem">by total plays</span></h2><ul class="rank-list" id="listArtists"></ul></div>
+    <div class="card"><h2>Top Albums <span style="color:var(--muted);font-weight:400;font-size:0.8rem">by total plays</span></h2><ul class="rank-list" id="listAlbums"></ul></div>
+  </div>
+
+  <div class="card">
+    <h2>Artists Listened In Depth
+      <span style="color:var(--muted);font-weight:400;font-size:0.8rem"> — geometric mean of plays per track, min.
+        <select id="deepMinTracksArtist" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:2px 6px;border-radius:4px;font-size:0.8rem" onchange="loadTops()">
+          <option value="5">5</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
+        </select>
+        unique tracks
+      </span>
+    </h2>
+    <ul class="rank-list" id="listArtistsDeep"></ul>
+  </div>
+  <div class="card"><h2>Top Tracks</h2><ul class="rank-list" id="listTracks"></ul></div>
+
+  <div class="card">
+    <h2>Albums Listened In Depth
+      <span style="color:var(--muted);font-weight:400;font-size:0.8rem"> — geometric mean of plays per track, min.
+        <select id="deepMinTracks" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:2px 6px;border-radius:4px;font-size:0.8rem" onchange="loadTops()">
+          <option value="3">3</option>
+          <option value="5" selected>5</option>
+          <option value="7">7</option>
+        </select>
+        unique tracks
+      </span>
+    </h2>
+    <ul class="rank-list" id="listAlbumsDeep"></ul>
+  </div>
+</div>
+
+<!-- PATTERNS -->
+<div id="sec-patterns" class="section">
+  <div class="two-col">
+    <div class="card">
+      <h2>Time of Day</h2>
+      <div class="chart-wrap short"><canvas id="chartHour"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Day of the Week</h2>
+      <div class="chart-wrap short"><canvas id="chartWeekday"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- TRENDING -->
+<div id="sec-trending" class="section">
+  <div class="card">
+    <div class="controls">
+      <label>Period:</label>
+      <select id="trendingGran">
+        <option value="week">By week (last 12 weeks)</option>
+        <option value="month" selected>By month (last 12 months)</option>
+        <option value="year">By year (last 6 years)</option>
+      </select>
+      <button onclick="loadTrending()">Apply</button>
+    </div>
+    <p style="font-size:.8rem;color:var(--muted);margin-top:8px">
+      Artists whose play count has been growing consistently. The percentage shows growth per period relative to their own average.
+    </p>
+  </div>
+  <div class="card">
+    <h2 id="trendingTitle">Growing Artists</h2>
+    <ul class="rank-list" id="trendingList" style="margin-top:8px"></ul>
+  </div>
+</div>
+
+<!-- WRAPPED -->
+<div id="sec-wrapped" class="section">
+  <div class="card">
+    <div class="controls">
+      <label>Year:</label>
+      <select id="wrappedYear">
+        {% for y in years %}<option value="{{ y }}">{{ y }}</option>{% endfor %}
+      </select>
+      <button onclick="loadWrapped()">View Wrapped</button>
+    </div>
+  </div>
+
+  <div id="wrappedContent" style="display:none">
+    <div class="stat-grid" id="wrappedStats"></div>
+    <div class="two-col">
+      <div class="card"><h2>Top 10 Artists <span style="color:var(--muted);font-weight:400;font-size:0.8rem">by total plays</span></h2><ul class="rank-list" id="wrappedArtists"></ul></div>
+      <div class="card"><h2>Top 10 Tracks</h2><ul class="rank-list" id="wrappedTracks"></ul></div>
+    </div>
+    <div class="card"><h2>Artists Listened In Depth
+      <span style="color:var(--muted);font-weight:400;font-size:0.8rem">geometric mean · min. 10 unique tracks</span></h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">Artists you listen to broadly and consistently, not just their hits.</p>
+      <ul class="rank-list" id="wrappedArtistsDeep"></ul>
+    </div>
+    <div class="card"><h2>Top 10 Albums <span style="color:var(--muted);font-weight:400;font-size:0.8rem">by total plays</span></h2><ul class="rank-list" id="wrappedAlbums"></ul></div>
+    <div class="card"><h2>Top 10 Albums Listened In Depth</h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">Geometric mean of plays per unique track (min. 5 tracks). Albums you listen to fully, not just a hit.</p>
+      <ul class="rank-list" id="wrappedAlbumsDeep"></ul>
+    </div>
+    <div class="card">
+      <h2>Artists Discovered in <span id="wrappedDiscoveredYear" style="color:var(--acc)"></span></h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">Artists whose very first scrobble in your entire history was this year.</p>
+      <ul class="rank-list" id="wrappedDiscovered"></ul>
+    </div>
+    <div class="card"><h2>Monthly Activity</h2>
+      <div class="chart-wrap short"><canvas id="chartWrappedMonths"></canvas></div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<!-- ARTIST MODAL -->
+<div class="modal-backdrop" id="artistModal" onclick="closeArtistModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalArtistName"></h2>
+      <button class="modal-close" onclick="closeArtistModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-stats" id="modalStats"></div>
+      <div class="modal-section">
+        <h3>Monthly Activity</h3>
+        <div class="sparkline-wrap"><canvas id="modalSparkline"></canvas></div>
+      </div>
+      <div class="two-col">
+        <div class="modal-section">
+          <h3>Top Tracks</h3>
+          <ul class="rank-list" id="modalTracks"></ul>
+        </div>
+        <div class="modal-section">
+          <h3>Favorite Albums <span id="modalAlbumNote" style="font-size:.7rem;font-weight:400;color:var(--acc2)"></span></h3>
+          <div id="modalAlbums"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <a class="lfm-badge" href="https://www.last.fm" target="_blank" rel="noopener">
+    <span class="powered">Powered by</span>
+    <span class="by">
+      <svg width="42" height="14" viewBox="0 0 42 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <text x="0" y="11" font-family="Arial,sans-serif" font-weight="700" font-size="12" fill="white">Last.fm</text>
+      </svg>
+      &amp; AudioScrobbler
+    </span>
+  </a>
+</footer>
+
+<script>
+// ── navigation ────────────────────────────────────────────────────────────
+const navLinks = document.querySelectorAll('nav a');
+const sections = document.querySelectorAll('.section');
+navLinks.forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    navLinks.forEach(x => x.classList.remove('active'));
+    sections.forEach(s => s.classList.remove('active'));
+    a.classList.add('active');
+    const id = 'sec-' + a.dataset.section;
+    document.getElementById(id).classList.add('active');
+    onSectionActivate(a.dataset.section);
+  });
+});
+
+const chartInstances = {};
+function makeChart(id, type, labels, datasets, opts = {}) {
+  if (chartInstances[id]) chartInstances[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  chartInstances[id] = new Chart(ctx, {
+    type, data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#e8e8f0', boxWidth: 12 } } },
+      scales: {
+        x: { ticks: { color: '#7070a0', maxRotation: 45 }, grid: { color: '#2a2a4a' } },
+        y: { ticks: { color: '#7070a0' }, grid: { color: '#2a2a4a' } },
+      },
+      ...opts
+    }
+  });
+}
+
+function rankListDeep(ulId, items, artistMode = false) {
+  const ul = document.getElementById(ulId);
+  if (!ul) return;
+  if (!items.length) { ul.innerHTML = '<li class="empty">No data</li>'; return; }
+  const max = items[0].score;
+  ul.innerHTML = items.map((it, i) => {
+    const name = artistMode ? artistLink(it.artist) : esc(it.album);
+    const sub  = artistMode
+      ? `${it.unique_tracks} tracks &middot; ${it.total_plays.toLocaleString()} plays`
+      : `${artistLink(it.artist)} &middot; ${it.unique_tracks} tracks &middot; ${it.total_plays.toLocaleString()} plays`;
+    return `<li>
+      <span class="rank-num">${i+1}</span>
+      <span class="rank-name">${name}<br><span class="rank-sub">${sub}</span></span>
+      <span class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(it.score/max*100)}%"></div></span>
+      <span class="rank-count" title="geometric mean">${it.score}</span>
+    </li>`;
+  }).join('');
+}
+
+function artistLink(name) {
+  return `<a class="artist-link" data-artist="${esc(name)}">${esc(name)}</a>`;
+}
+
+function rankList(ulId, items, nameFn, subFn, countKey = 'n') {
+  const ul = document.getElementById(ulId);
+  if (!ul) return;
+  if (!items.length) { ul.innerHTML = '<li class="empty">No data</li>'; return; }
+  const max = items[0][countKey];
+  ul.innerHTML = items.map((it, i) => {
+    const isArtistRow = !subFn && it.artist !== undefined;
+    const nameHtml = isArtistRow ? artistLink(nameFn(it)) : esc(nameFn(it));
+    const subHtml  = subFn ? `<br><span class="rank-sub">${artistLink(subFn(it))}</span>` : '';
+    return `<li>
+      <span class="rank-num">${i+1}</span>
+      <span class="rank-name">${nameHtml}${subHtml}</span>
+      <span class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(it[countKey]/max*100)}%"></div></span>
+      <span class="rank-count">${it[countKey].toLocaleString()}</span>
+    </li>`;
+  }).join('');
+}
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+// ── overview ──────────────────────────────────────────────────────────────
+let overviewLoaded = false;
+async function loadOverview() {
+  if (overviewLoaded) return;
+  overviewLoaded = true;
+
+  const years = await fetch('/api/scrobbles-per-year').then(r=>r.json());
+  if (years.length) {
+    makeChart('chartYears', 'bar',
+      years.map(r=>r.year),
+      [{ label: 'Scrobbles', data: years.map(r=>r.n),
+         backgroundColor: '#e31c26', borderRadius: 4 }]);
+  }
+
+  const [artists, tracks] = await Promise.all([
+    fetch('/api/top-artists?limit=10').then(r=>r.json()),
+    fetch('/api/top-tracks?limit=10').then(r=>r.json()),
+  ]);
+  rankList('listTopArtistsOv', artists, r=>r.artist, null);
+  rankList('listTopTracksOv',  tracks,  r=>r.track,  r=>r.artist);
+}
+
+// ── timeline ──────────────────────────────────────────────────────────────
+let timelineLoaded = false;
+async function loadTimeline() {
+  const year = document.getElementById('timelineYear').value;
+  const url  = '/api/scrobbles-per-month' + (year ? `?year=${year}` : '');
+  const data = await fetch(url).then(r=>r.json());
+  makeChart('chartTimeline', 'bar',
+    data.map(r=>r.month),
+    [{ label: 'Scrobbles', data: data.map(r=>r.n),
+       backgroundColor: '#e31c26', borderRadius: 3 }]);
+  timelineLoaded = true;
+}
+
+// ── tops ──────────────────────────────────────────────────────────────────
+async function loadTops() {
+  const from           = document.getElementById('topsFrom').value;
+  const to             = document.getElementById('topsTo').value;
+  const limit          = document.getElementById('topsLimit').value;
+  const minTracksAlbum  = document.getElementById('deepMinTracks').value;
+  const minTracksArtist = document.getElementById('deepMinTracksArtist').value;
+  const qs              = new URLSearchParams({ limit, ...(from && {from}), ...(to && {to}) });
+  const qsDeepAlbum     = new URLSearchParams({ limit, min_tracks: minTracksAlbum,  ...(from && {from}), ...(to && {to}) });
+  const qsDeepArtist    = new URLSearchParams({ limit, min_tracks: minTracksArtist, ...(from && {from}), ...(to && {to}) });
+
+  const [artists, albums, tracks, albumsDeep, artistsDeep] = await Promise.all([
+    fetch('/api/top-artists?'     + qs).then(r=>r.json()),
+    fetch('/api/top-albums?'      + qs).then(r=>r.json()),
+    fetch('/api/top-tracks?'      + qs).then(r=>r.json()),
+    fetch('/api/top-albums-deep?' + qsDeepAlbum).then(r=>r.json()),
+    fetch('/api/top-artists-deep?'+ qsDeepArtist).then(r=>r.json()),
+  ]);
+  rankList('listArtists',    artists,    r=>r.artist, null);
+  rankList('listAlbums',     albums,     r=>r.album,  r=>r.artist);
+  rankList('listTracks',     tracks,     r=>r.track,  r=>r.artist);
+  rankListDeep('listAlbumsDeep',  albumsDeep);
+  rankListDeep('listArtistsDeep', artistsDeep, true);
+}
+
+// ── patterns ──────────────────────────────────────────────────────────────
+let patternsLoaded = false;
+async function loadPatterns() {
+  if (patternsLoaded) return;
+  patternsLoaded = true;
+  const data = await fetch('/api/heatmap').then(r=>r.json());
+  makeChart('chartHour', 'bar',
+    [...Array(24).keys()].map(h => h.toString().padStart(2,'0') + 'h'),
+    [{ label: 'Scrobbles', data: data.hours, backgroundColor: '#ff6b35', borderRadius: 3 }]);
+  makeChart('chartWeekday', 'bar',
+    ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+    [{ label: 'Scrobbles', data: data.weekdays, backgroundColor: '#e31c26', borderRadius: 3 }]);
+}
+
+// ── wrapped ───────────────────────────────────────────────────────────────
+async function loadWrapped() {
+  const year = document.getElementById('wrappedYear').value;
+  if (!year) return;
+  const y0 = `${year}-01-01`, y1 = `${year}-12-31`;
+  const qs  = new URLSearchParams({ from: y0, to: y1, limit: 10 });
+  const [artists, albums, tracks, months, discovered, albumsDeep, artistsDeep] = await Promise.all([
+    fetch('/api/top-artists?'     + qs).then(r=>r.json()),
+    fetch('/api/top-albums?'      + qs).then(r=>r.json()),
+    fetch('/api/top-tracks?'      + qs).then(r=>r.json()),
+    fetch('/api/scrobbles-per-month?year=' + year).then(r=>r.json()),
+    fetch('/api/new-artists?'     + qs).then(r=>r.json()),
+    fetch('/api/top-albums-deep?' + new URLSearchParams({ limit: 10, min_tracks: 5,  from: y0, to: y1 })).then(r=>r.json()),
+    fetch('/api/top-artists-deep?'+ new URLSearchParams({ limit: 10, min_tracks: 10, from: y0, to: y1 })).then(r=>r.json()),
+  ]);
+  const total = months.reduce((s,r)=>s+r.n, 0);
+  document.getElementById('wrappedStats').innerHTML = `
+    <div class="stat-card"><div class="val">${total.toLocaleString()}</div><div class="lbl">Scrobbles in ${year}</div></div>
+    <div class="stat-card"><div class="val">${artists.length ? esc(artists[0].artist) : '—'}</div><div class="lbl">#1 Artist</div></div>
+    <div class="stat-card"><div class="val" style="font-size:1rem">${albums.length ? esc(albums[0].album) : '—'}</div><div class="lbl">#1 Album</div></div>
+    <div class="stat-card"><div class="val" style="font-size:1rem">${tracks.length ? esc(tracks[0].track) : '—'}</div><div class="lbl">#1 Track</div></div>
+  `;
+  rankList('wrappedArtists',    artists,    r=>r.artist, null);
+  rankList('wrappedTracks',     tracks,     r=>r.track,  r=>r.artist);
+  rankList('wrappedAlbums',     albums,     r=>r.album,  r=>r.artist);
+  rankListDeep('wrappedAlbumsDeep',  albumsDeep);
+  rankListDeep('wrappedArtistsDeep', artistsDeep, true);
+  rankList('wrappedDiscovered', discovered, r=>r.artist, null);
+  document.getElementById('wrappedDiscoveredYear').textContent = year;
+  const discCard = `<div class="stat-card"><div class="val">${discovered.length}</div><div class="lbl">New Artists</div></div>`;
+  document.getElementById('wrappedStats').insertAdjacentHTML('beforeend', discCard);
+  makeChart('chartWrappedMonths', 'bar',
+    months.map(r=>r.month.slice(5)),
+    [{ label: 'Scrobbles', data: months.map(r=>r.n), backgroundColor: '#e31c26', borderRadius: 3 }]);
+  document.getElementById('wrappedContent').style.display = 'block';
+}
+
+// ── section activation router ─────────────────────────────────────────────
+function onSectionActivate(name) {
+  if (name === 'overview')  loadOverview();
+  if (name === 'timeline')  { if (!timelineLoaded) loadTimeline(); }
+  if (name === 'tops')      loadTops();
+  if (name === 'patterns')  loadPatterns();
+  if (name === 'trending')  loadTrending();
+}
+
+loadOverview();
+
+// ── trending ──────────────────────────────────────────────────────────────
+let trendingLoaded = null;
+
+async function loadTrending() {
+  const g = document.getElementById('trendingGran').value;
+  trendingLoaded = g;
+
+  const labels = { week: 'week', month: 'month', year: 'year' };
+  document.getElementById('trendingTitle').textContent =
+    `Growing Artists · by ${labels[g]}`;
+
+  const ul = document.getElementById('trendingList');
+  ul.innerHTML = '<li style="color:var(--muted);font-size:.85rem;padding:8px 0">Calculating trends<span class="loading-dots"></span></li>';
+
+  const data = await fetch('/api/trending?g=' + g).then(r => r.json());
+
+  if (!data.length) {
+    ul.innerHTML = '<li style="color:var(--muted);font-size:.85rem;padding:8px 0">Not enough data to calculate trends.</li>';
+    return;
+  }
+
+  ul.innerHTML = data.map((d, i) => {
+    const max = Math.max(...d.spark, 1);
+    const bars = d.spark.map((v, j) => {
+      const h = Math.max(2, Math.round(v / max * 28));
+      const cls = j === d.spark.length - 1 ? 'last' : '';
+      return `<span class="${cls}" style="height:${h}px"></span>`;
+    }).join('');
+
+    const periodLabel = g === 'week' ? 'wk' : g === 'month' ? 'mo' : 'yr';
+    return `<li class="trend-row">
+      <span class="rank-num" style="width:24px;text-align:right;color:var(--muted);font-size:.8rem;flex-shrink:0">${i+1}</span>
+      <span class="trend-name">
+        ${artistLink(d.artist)}
+        <div class="sub">${d.mean_plays} plays/${periodLabel} (avg) &middot; slope +${d.slope}/${periodLabel}</div>
+      </span>
+      <span class="trend-spark">${bars}</span>
+      <span class="trend-badge">+${d.rel_pct}%</span>
+      <span class="trend-total">${d.total.toLocaleString()} plays</span>
+    </li>`;
+  }).join('');
+}
+
+// ── artist modal ──────────────────────────────────────────────────────────
+async function openArtist(name) {
+  const modal = document.getElementById('artistModal');
+  modal.classList.add('open');
+  document.getElementById('modalArtistName').textContent = name;
+  document.getElementById('modalStats').innerHTML    = '<div style="color:var(--muted);font-size:.85rem" class="loading-dots">Loading</div>';
+  document.getElementById('modalTracks').innerHTML   = '';
+  document.getElementById('modalAlbums').innerHTML   = '';
+  document.getElementById('modalAlbumNote').textContent = '';
+
+  const profile = await fetch('/api/artist?name=' + encodeURIComponent(name)).then(r => r.json());
+  renderArtistModal(profile);
+
+  if (profile.missing_years && profile.missing_years.length) {
+    document.getElementById('modalAlbumNote').textContent = '(loading release years...)';
+    await fetch('/api/fetch-releases', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ artist: name, albums: profile.missing_years }),
+    }).then(r => r.json());
+
+    const updated = await fetch('/api/artist?name=' + encodeURIComponent(name)).then(r => r.json());
+    renderArtistAlbums(updated.albums);
+    document.getElementById('modalAlbumNote').textContent =
+      updated.albums.some(a => a.smart_score) ? '(score = depth × intensity/year)' : '';
+  }
+}
+
+function renderArtistModal(p) {
+  const firstDate = p.first_date || '—';
+  document.getElementById('modalStats').innerHTML = `
+    <div class="modal-stat"><div class="v">${p.total_plays.toLocaleString()}</div><div class="l">Plays</div></div>
+    <div class="modal-stat"><div class="v">${p.unique_tracks.toLocaleString()}</div><div class="l">Unique Tracks</div></div>
+    <div class="modal-stat"><div class="v">${p.unique_albums.toLocaleString()}</div><div class="l">Albums</div></div>
+    <div class="modal-stat"><div class="v" style="font-size:.95rem">${firstDate}</div><div class="l">First Listened</div></div>
+  `;
+
+  if (chartInstances['modalSparkline']) chartInstances['modalSparkline'].destroy();
+  if (p.monthly && p.monthly.length) {
+    const ctx = document.getElementById('modalSparkline').getContext('2d');
+    chartInstances['modalSparkline'] = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: p.monthly.map(r => r.month),
+        datasets: [{ data: p.monthly.map(r => r.n), backgroundColor: '#e31c2688', borderRadius: 2 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#7070a0', maxTicksLimit: 8, maxRotation: 0 }, grid: { display: false } },
+          y: { ticks: { color: '#7070a0', maxTicksLimit: 4 }, grid: { color: '#2a2a4a' } },
+        },
+      },
+    });
+  }
+
+  rankList('modalTracks', p.top_tracks, r => r.track, null);
+  renderArtistAlbums(p.albums);
+}
+
+function renderArtistAlbums(albums) {
+  const el = document.getElementById('modalAlbums');
+  if (!albums || !albums.length) { el.innerHTML = '<p style="color:var(--muted);font-size:.85rem">No album data</p>'; return; }
+  const hasSmartScore = albums.some(a => a.smart_score != null);
+  const maxScore = hasSmartScore
+    ? Math.max(...albums.filter(a => a.smart_score != null).map(a => a.smart_score))
+    : Math.max(...albums.map(a => a.geo_mean));
+
+  el.innerHTML = albums.map((a, i) => {
+    const score      = a.smart_score != null ? a.smart_score : a.geo_mean;
+    const scoreLabel = a.smart_score != null ? `score ${a.smart_score}` : `geo ${a.geo_mean}`;
+    const pct        = Math.round(score / maxScore * 100);
+    const yearStr    = a.release_year ? a.release_year : '—';
+    return `<div class="album-row">
+      <span class="album-rank">${i+1}</span>
+      <span class="album-info">
+        <div class="album-name">${esc(a.album)}</div>
+        <div class="album-meta">${a.unique_tracks} tracks &middot; ${a.total_plays.toLocaleString()} plays &middot; ${yearStr}</div>
+        <div style="margin-top:4px"><div style="height:4px;border-radius:2px;background:var(--acc2);width:${pct}%"></div></div>
+      </span>
+      <span class="album-score-wrap">
+        <span class="album-score">${scoreLabel}</span>
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function closeArtistModal(e) {
+  if (e && e.target !== document.getElementById('artistModal')) return;
+  document.getElementById('artistModal').classList.remove('open');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('artistModal').classList.remove('open'); });
+
+document.addEventListener('click', e => {
+  const link = e.target.closest('.artist-link');
+  if (link) openArtist(link.dataset.artist);
+});
+
+// ── fix artist names button ───────────────────────────────────────────────
+let _correctPoll = null;
+
+async function startCorrect() {
+  const btn = document.getElementById('btnCorrect');
+  btn.disabled = true;
+  const res = await fetch('/api/correct-artists', { method: 'POST' }).then(r => r.json());
+  if (!res.ok) {
+    alert(res.error || 'Could not start correction.');
+    btn.disabled = false;
+    return;
+  }
+  btn.classList.add('syncing');
+  document.getElementById('syncProgress').classList.add('visible');
+  _correctPoll = setInterval(pollCorrect, 1200);
+}
+
+async function pollCorrect() {
+  const s   = await fetch('/api/correct-artists/status').then(r => r.json());
+  const btn = document.getElementById('btnCorrect');
+  const bar = document.getElementById('syncBar');
+  const msg = document.getElementById('syncMsg');
+
+  msg.textContent = s.message || '';
+  bar.style.width = s.total > 0 ? Math.round(s.done / s.total * 100) + '%' : (s.running ? '15%' : '100%');
+
+  if (!s.running) {
+    clearInterval(_correctPoll);
+    _correctPoll = null;
+    btn.classList.remove('syncing');
+    btn.disabled = false;
+    if (s.error) {
+      msg.textContent = 'Error: ' + s.error;
+    } else {
+      btn.classList.add('done');
+      bar.style.width = '100%';
+      setTimeout(() => {
+        overviewLoaded = false;
+        loadOverview();
+        btn.classList.remove('done');
+        document.getElementById('syncProgress').classList.remove('visible');
+        bar.style.width = '0%';
+      }, 2500);
+    }
+  }
+}
+
+// ── sync button ───────────────────────────────────────────────────────────
+let _syncPoll = null;
+
+async function startSync() {
+  const btn = document.getElementById('btnSync');
+  btn.disabled = true;
+  const res = await fetch('/api/sync', { method: 'POST' }).then(r => r.json());
+  if (!res.ok) {
+    alert(res.error || 'Could not start sync.');
+    btn.disabled = false;
+    return;
+  }
+  btn.classList.add('syncing');
+  document.getElementById('syncProgress').classList.add('visible');
+  _syncPoll = setInterval(pollSync, 1200);
+}
+
+async function pollSync() {
+  const s      = await fetch('/api/sync/status').then(r => r.json());
+  const btn    = document.getElementById('btnSync');
+  const bar    = document.getElementById('syncBar');
+  const msg    = document.getElementById('syncMsg');
+  const infoEl = document.getElementById('syncInfo');
+
+  msg.textContent = s.message || '';
+
+  if (s.total > 0) {
+    bar.style.width = Math.round(s.page / s.total * 100) + '%';
+  } else {
+    bar.style.width = s.running ? '15%' : '100%';
+  }
+
+  if (!s.running) {
+    clearInterval(_syncPoll);
+    _syncPoll = null;
+    btn.classList.remove('syncing');
+    btn.disabled = false;
+
+    if (s.error) {
+      msg.textContent = '⚠ ' + s.error;
+      bar.style.background = 'var(--acc)';
+    } else {
+      btn.classList.add('done');
+      bar.style.width = '100%';
+      if (s.last_sync) infoEl.textContent = 'Last sync: ' + s.last_sync;
+      setTimeout(() => {
+        overviewLoaded = false;
+        loadOverview();
+        btn.classList.remove('done');
+        document.getElementById('syncProgress').classList.remove('visible');
+        bar.style.width = '0%';
+        bar.style.background = 'var(--acc2)';
+      }, 2500);
+    }
+  }
+}
+</script>
+</body>
+</html>
