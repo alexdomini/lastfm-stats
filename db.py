@@ -463,6 +463,110 @@ def save_album_release(artist, album, year):
     conn.close()
 
 
+def top_by_decade(decade, limit=10):
+    """Top tracks, artists, and albums whose album release year falls in the given decade."""
+    conn = get_conn()
+    decade_from = decade
+    decade_to   = decade + 9
+
+    tracks = conn.execute("""
+        SELECT s.artist, s.track, COUNT(*) AS n
+        FROM scrobbles s
+        JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
+        WHERE ar.release_year BETWEEN ? AND ?
+        GROUP BY s.artist, s.track
+        ORDER BY n DESC LIMIT ?
+    """, (decade_from, decade_to, limit)).fetchall()
+
+    artists = conn.execute("""
+        SELECT s.artist, COUNT(*) AS n
+        FROM scrobbles s
+        JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
+        WHERE ar.release_year BETWEEN ? AND ?
+        GROUP BY s.artist
+        ORDER BY n DESC LIMIT ?
+    """, (decade_from, decade_to, limit)).fetchall()
+
+    albums = conn.execute("""
+        SELECT s.artist, s.album, ar.release_year, COUNT(*) AS n
+        FROM scrobbles s
+        JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
+        WHERE ar.release_year BETWEEN ? AND ?
+        GROUP BY s.artist, s.album
+        ORDER BY n DESC LIMIT ?
+    """, (decade_from, decade_to, limit)).fetchall()
+
+    classified = conn.execute("""
+        SELECT COUNT(*) FROM scrobbles s
+        JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
+        WHERE ar.release_year IS NOT NULL
+    """).fetchone()[0]
+
+    total = conn.execute("SELECT COUNT(*) FROM scrobbles").fetchone()[0]
+    conn.close()
+
+    return {
+        "decade": decade,
+        "tracks":  [dict(r) for r in tracks],
+        "artists": [dict(r) for r in artists],
+        "albums":  [dict(r) for r in albums],
+        "classified": classified,
+        "total": total,
+    }
+
+
+def music_era_profile():
+    """Play-weighted mean, mode, and median release year plus decade distribution."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT ar.release_year, COUNT(*) AS plays
+        FROM scrobbles s
+        JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
+        WHERE ar.release_year IS NOT NULL
+          AND ar.release_year BETWEEN 1900 AND 2030
+        GROUP BY ar.release_year
+        ORDER BY ar.release_year
+    """).fetchall()
+    conn.close()
+
+    if not rows:
+        return None
+
+    years  = [r["release_year"] for r in rows]
+    plays  = [r["plays"]        for r in rows]
+    total  = sum(plays)
+
+    # weighted mean
+    mean = sum(y * p for y, p in zip(years, plays)) / total
+
+    # mode: year with the most plays
+    mode = years[plays.index(max(plays))]
+
+    # weighted median
+    cumulative, median = 0, years[0]
+    for y, p in zip(years, plays):
+        cumulative += p
+        if cumulative >= total / 2:
+            median = y
+            break
+
+    # decade breakdown
+    decade_map = {}
+    for y, p in zip(years, plays):
+        d = (y // 10) * 10
+        decade_map[d] = decade_map.get(d, 0) + p
+
+    return {
+        "mean":   round(mean, 1),
+        "mode":   mode,
+        "median": median,
+        "total_classified": total,
+        "decade_distribution": [
+            {"decade": k, "plays": v} for k, v in sorted(decade_map.items())
+        ],
+    }
+
+
 def _ts_filter(ts_from, ts_to):
     clauses, params = [], []
     if ts_from:

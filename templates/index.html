@@ -65,6 +65,10 @@
   .controls button:hover { background: #c1151e; }
 
   .rank-list { list-style: none; }
+  .decade-tab { background: var(--card); border: 1px solid var(--border); color: var(--fg); padding: 5px 14px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; transition: background .15s; }
+  .decade-tab.active, .decade-tab:hover { background: var(--acc); color: #fff; border-color: var(--acc); }
+  .decade-btn-item { background: var(--card); border: 1px solid var(--border); color: var(--fg); padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; transition: background .15s; }
+  .decade-btn-item.active, .decade-btn-item:hover { background: var(--acc2); color: #fff; border-color: var(--acc2); }
   .rank-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
   .rank-list li:last-child { border-bottom: none; }
   .rank-num { width: 24px; text-align: right; color: var(--muted); font-size: 0.8rem; flex-shrink: 0; }
@@ -303,6 +307,33 @@
         {% for y in years %}<option value="{{ y }}">{{ y }}</option>{% endfor %}
       </select>
       <button onclick="loadWrapped()">View Wrapped</button>
+    </div>
+  </div>
+
+  <!-- Era Profile (auto-loaded, not year-specific) -->
+  <div class="card" id="eraProfileCard" style="display:none">
+    <h2>Your Music Era</h2>
+    <p style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">Play-weighted statistics across your entire listening history, based on album release years.</p>
+    <div class="stat-grid" id="eraStats"></div>
+    <div class="chart-wrap short" style="margin-top:16px"><canvas id="chartEraDecades"></canvas></div>
+    <p id="eraCoverage" style="font-size:0.75rem;color:var(--muted);margin-top:8px;text-align:right"></p>
+  </div>
+
+  <!-- Decade Browser (auto-loaded, not year-specific) -->
+  <div class="card" id="decadeBrowserCard" style="display:none">
+    <h2>Browse by Decade</h2>
+    <p style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">Top artists, albums, and tracks from each era. Only covers music where release year has been fetched.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px" id="decadeBtns"></div>
+    <div id="decadeContent" style="display:none">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="decade-tab active" data-tab="artists" onclick="showDecadeTab('artists',this)">Artists</button>
+        <button class="decade-tab" data-tab="albums" onclick="showDecadeTab('albums',this)">Albums</button>
+        <button class="decade-tab" data-tab="tracks" onclick="showDecadeTab('tracks',this)">Tracks</button>
+      </div>
+      <ul class="rank-list" id="decadeArtists"></ul>
+      <ul class="rank-list" id="decadeAlbums" style="display:none"></ul>
+      <ul class="rank-list" id="decadeTracks" style="display:none"></ul>
+      <p id="decadeCoverage" style="font-size:0.75rem;color:var(--muted);margin-top:8px;text-align:right"></p>
     </div>
   </div>
 
@@ -561,6 +592,77 @@ async function loadWrapped() {
   document.getElementById('wrappedContent').style.display = 'block';
 }
 
+// ── era profile ───────────────────────────────────────────────────────────
+let eraLoaded = false;
+
+async function loadEraProfile() {
+  if (eraLoaded) return;
+  const data = await fetch('/api/music-era').then(r => r.json());
+  if (!data || !data.mean) return;
+
+  document.getElementById('eraStats').innerHTML = `
+    <div class="stat-card"><div class="val">${Math.round(data.mean)}</div><div class="lbl">Mean Year</div></div>
+    <div class="stat-card"><div class="val">${data.median}</div><div class="lbl">Median Year</div></div>
+    <div class="stat-card"><div class="val">${data.mode}</div><div class="lbl">Mode Year</div></div>
+    <div class="stat-card"><div class="val">${data.total_classified.toLocaleString()}</div><div class="lbl">Classified Scrobbles</div></div>
+  `;
+
+  const dd = data.decade_distribution;
+  makeChart('chartEraDecades', 'bar',
+    dd.map(d => d.decade + 's'),
+    [{ label: 'Plays', data: dd.map(d => d.plays), backgroundColor: '#e31c26', borderRadius: 3 }],
+    { plugins: { legend: { display: false } } }
+  );
+
+  const pct = ((data.total_classified / {{ overview.total }}) * 100).toFixed(1);
+  document.getElementById('eraCoverage').textContent = `Coverage: ${pct}% of total scrobbles have release year data`;
+  document.getElementById('eraProfileCard').style.display = 'block';
+  buildDecadeButtons(dd);
+  document.getElementById('decadeBrowserCard').style.display = 'block';
+  eraLoaded = true;
+}
+
+// ── decade browser ────────────────────────────────────────────────────────
+let currentDecadeData = null;
+
+function buildDecadeButtons(distribution) {
+  const known = new Set(distribution.map(d => d.decade));
+  const all   = [1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020];
+  const wrap  = document.getElementById('decadeBtns');
+  const label = d => d === 2000 ? "'00s" : `'${String(d).slice(2)}s`;
+  wrap.innerHTML = all.map(d =>
+    `<button class="decade-btn-item${known.has(d) ? '' : ' muted'}" data-decade="${d}" onclick="loadDecade(${d})">${label(d)}</button>`
+  ).join('');
+}
+
+async function loadDecade(decade) {
+  document.querySelectorAll('.decade-btn-item').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.decade) === decade);
+  });
+  const data = await fetch(`/api/top-by-decade?decade=${decade}&limit=10`).then(r => r.json());
+  currentDecadeData = data;
+
+  rankList('decadeArtists', data.artists, r => r.artist, null);
+  rankList('decadeAlbums',  data.albums,  r => r.album,  r => `${r.artist} · ${r.release_year}`);
+  rankList('decadeTracks',  data.tracks,  r => r.track,  r => r.artist);
+
+  const pct = data.total > 0 ? ((data.classified / data.total) * 100).toFixed(1) : 0;
+  document.getElementById('decadeCoverage').textContent =
+    `Based on ${pct}% of scrobbles with release year data`;
+
+  showDecadeTab('artists');
+  document.getElementById('decadeContent').style.display = 'block';
+}
+
+function showDecadeTab(tab, btn) {
+  ['artists', 'albums', 'tracks'].forEach(t => {
+    document.getElementById('decade' + t.charAt(0).toUpperCase() + t.slice(1)).style.display =
+      t === tab ? 'block' : 'none';
+  });
+  document.querySelectorAll('.decade-tab').forEach(b => b.classList.remove('active'));
+  (btn || document.querySelector(`.decade-tab[data-tab="${tab}"]`))?.classList.add('active');
+}
+
 // ── section activation router ─────────────────────────────────────────────
 function onSectionActivate(name) {
   if (name === 'overview')  loadOverview();
@@ -568,6 +670,7 @@ function onSectionActivate(name) {
   if (name === 'tops')      loadTops();
   if (name === 'patterns')  loadPatterns();
   if (name === 'trending')  loadTrending();
+  if (name === 'wrapped') loadEraProfile();
 }
 
 loadOverview();

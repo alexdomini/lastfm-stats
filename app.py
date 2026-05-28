@@ -264,6 +264,18 @@ def api_fetch_releases():
     return jsonify(results)
 
 
+@app.route("/api/top-by-decade")
+def api_top_by_decade():
+    decade = int(request.args.get("decade", 1990))
+    limit  = int(request.args.get("limit", 10))
+    return jsonify(db.top_by_decade(decade=decade, limit=limit))
+
+
+@app.route("/api/music-era")
+def api_music_era():
+    return jsonify(db.music_era_profile() or {})
+
+
 @app.route("/api/overview")
 def api_overview():
     ov = db.overview()
