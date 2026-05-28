@@ -26,6 +26,14 @@ _correct = {
     "message": "",
     "error": "",
 }
+_bulk_rel = {
+    "running": False,
+    "done": 0,
+    "total": 0,
+    "found": 0,
+    "message": "",
+    "error": "",
+}
 _sync_lock = threading.Lock()
 
 
@@ -262,6 +270,38 @@ def api_fetch_releases():
             pass
         time.sleep(0.22)
     return jsonify(results)
+
+
+@app.route("/api/fetch-releases-bulk", methods=["POST"])
+def api_fetch_releases_bulk_start():
+    with _sync_lock:
+        if _bulk_rel["running"] or _sync["running"] or _correct["running"]:
+            return jsonify({"ok": False, "error": "An operation is already running."})
+        _bulk_rel.update(running=True, done=0, total=0, found=0,
+                         message="Counting uncached albums…", error="")
+
+    def _run():
+        import fetch_releases_bulk
+        try:
+            def on_progress(done, total, found, message):
+                with _sync_lock:
+                    _bulk_rel.update(done=done, total=total, found=found, message=message)
+            fetch_releases_bulk.run(on_progress=on_progress)
+        except Exception as e:
+            with _sync_lock:
+                _bulk_rel["error"] = str(e)
+        finally:
+            with _sync_lock:
+                _bulk_rel["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/fetch-releases-bulk/status")
+def api_fetch_releases_bulk_status():
+    with _sync_lock:
+        return jsonify(dict(_bulk_rel))
 
 
 @app.route("/api/top-by-decade")

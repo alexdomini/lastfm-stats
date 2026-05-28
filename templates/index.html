@@ -21,14 +21,14 @@
   .sync-area { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .sync-info { font-size: 0.75rem; color: var(--muted); }
 
-  #btnSync, #btnCorrect { background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  #btnSync, #btnCorrect, #btnFetchReleases { background: var(--bg3); border: 1px solid var(--border); color: var(--text);
     padding: 6px 16px; border-radius: 6px; font-size: 0.85rem; cursor: pointer;
     display: flex; align-items: center; gap: 7px; transition: background 0.15s; white-space: nowrap; }
-  #btnSync:hover:not(:disabled), #btnCorrect:hover:not(:disabled) { background: #252545; }
-  #btnSync:disabled, #btnCorrect:disabled { opacity: 0.5; cursor: not-allowed; }
-  #btnSync .dot, #btnCorrect .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-  #btnSync.syncing .dot, #btnCorrect.syncing .dot { background: var(--acc2); animation: pulse 1s infinite; }
-  #btnSync.done .dot, #btnCorrect.done .dot { background: #4caf50; }
+  #btnSync:hover:not(:disabled), #btnCorrect:hover:not(:disabled), #btnFetchReleases:hover:not(:disabled) { background: #252545; }
+  #btnSync:disabled, #btnCorrect:disabled, #btnFetchReleases:disabled { opacity: 0.5; cursor: not-allowed; }
+  #btnSync .dot, #btnCorrect .dot, #btnFetchReleases .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  #btnSync.syncing .dot, #btnCorrect.syncing .dot, #btnFetchReleases.syncing .dot { background: var(--acc2); animation: pulse 1s infinite; }
+  #btnSync.done .dot, #btnCorrect.done .dot, #btnFetchReleases.done .dot { background: #4caf50; }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 
   .sync-progress { display: none; flex-direction: column; gap: 4px; min-width: 220px; }
@@ -141,6 +141,9 @@
       <div class="sync-progress-msg" id="syncMsg"></div>
     </div>
     <div class="sync-info" id="syncInfo">{% if last_sync %}Last sync: {{ last_sync }}{% endif %}</div>
+    <button id="btnFetchReleases" onclick="startFetchReleases()" title="Fetch release years for all uncached albums (~1 hour for large libraries)">
+      <span class="dot"></span> Fetch Release Years
+    </button>
     <button id="btnCorrect" onclick="startCorrect()" title="Fix artist names using Last.fm corrections">
       <span class="dot"></span> Fix Artist Names
     </button>
@@ -816,6 +819,53 @@ document.addEventListener('click', e => {
   const link = e.target.closest('.artist-link');
   if (link) openArtist(link.dataset.artist);
 });
+
+// ── fetch release years (bulk) ────────────────────────────────────────────
+let _relPoll = null;
+
+async function startFetchReleases() {
+  const btn = document.getElementById('btnFetchReleases');
+  btn.disabled = true;
+  const res = await fetch('/api/fetch-releases-bulk', { method: 'POST' }).then(r => r.json());
+  if (!res.ok) {
+    alert(res.error || 'Could not start fetch.');
+    btn.disabled = false;
+    return;
+  }
+  btn.classList.add('syncing');
+  document.getElementById('syncProgress').classList.add('visible');
+  _relPoll = setInterval(pollFetchReleases, 1500);
+}
+
+async function pollFetchReleases() {
+  const s   = await fetch('/api/fetch-releases-bulk/status').then(r => r.json());
+  const btn = document.getElementById('btnFetchReleases');
+  const bar = document.getElementById('syncBar');
+  const msg = document.getElementById('syncMsg');
+
+  msg.textContent = s.message || '';
+  bar.style.width = s.total > 0 ? Math.round(s.done / s.total * 100) + '%' : (s.running ? '5%' : '100%');
+
+  if (!s.running) {
+    clearInterval(_relPoll);
+    _relPoll = null;
+    btn.classList.remove('syncing');
+    btn.disabled = false;
+    if (s.error) {
+      msg.textContent = 'Error: ' + s.error;
+    } else {
+      btn.classList.add('done');
+      bar.style.width = '100%';
+      setTimeout(() => {
+        eraLoaded = false;
+        loadEraProfile();
+        btn.classList.remove('done');
+        document.getElementById('syncProgress').classList.remove('visible');
+        bar.style.width = '0%';
+      }, 2500);
+    }
+  }
+}
 
 // ── fix artist names button ───────────────────────────────────────────────
 let _correctPoll = null;
