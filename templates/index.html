@@ -67,6 +67,10 @@
   .rank-list { list-style: none; }
   .decade-tab { background: var(--card); border: 1px solid var(--border); color: var(--fg); padding: 5px 14px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; transition: background .15s; }
   .decade-tab.active, .decade-tab:hover { background: var(--acc); color: #fff; border-color: var(--acc); }
+  .era-hero { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 18px 24px; flex: 1; min-width: 180px; }
+  .era-hero .era-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+  .era-hero .era-val { font-size: 2.4rem; font-weight: 700; color: var(--acc); line-height: 1; }
+  .era-hero .era-sub { font-size: 0.78rem; color: var(--muted); margin-top: 5px; }
   .decade-btn-item { background: var(--card); border: 1px solid var(--border); color: var(--fg); padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; transition: background .15s; }
   .decade-btn-item.active, .decade-btn-item:hover { background: var(--acc2); color: #fff; border-color: var(--acc2); }
   .rank-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
@@ -316,9 +320,9 @@
   <!-- Era Profile (auto-loaded, not year-specific) -->
   <div class="card" id="eraProfileCard" style="display:none">
     <h2>Your Music Era</h2>
-    <p style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">Play-weighted statistics across your entire listening history, based on album release years.</p>
-    <div class="stat-grid" id="eraStats"></div>
-    <div id="eraChartControls" style="display:none;gap:8px;margin-top:16px;margin-bottom:4px">
+    <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px">Based on how many times you play each album relative to how many albums you have from that era.</p>
+    <div id="eraStats" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px"></div>
+    <div id="eraChartControls" style="display:none;gap:8px;margin-bottom:8px">
       <button class="era-chart-toggle decade-tab" data-mode="plays_per_album">Plays per Album</button>
       <button class="era-chart-toggle decade-tab" data-mode="plays">Total Plays</button>
     </div>
@@ -619,16 +623,19 @@ async function loadEraProfile() {
 
   document.getElementById('chartEraDecades').parentElement.style.display = '';
 
-  const peakLabel = data.peak_decade === 2000 ? "'00s" : `'${String(data.peak_decade).slice(2)}s`;
+  const decadeLabel = d => d === 2000 ? "'00s" : `'${String(d).slice(2)}s`;
+  const peakDec = decadeLabel(data.peak_decade);
   document.getElementById('eraStats').innerHTML = `
-    <div class="stat-card"><div class="val">${Math.round(data.mean)}</div><div class="lbl">Mean Year</div></div>
-    <div class="stat-card"><div class="val">${data.median}</div><div class="lbl">Median Year</div></div>
-    <div class="stat-card"><div class="val">${data.mode}</div><div class="lbl">Mode Year</div></div>
-    <div class="stat-card" title="Decade with highest plays per album — least affected by how many albums you have from each era">
-      <div class="val">${peakLabel}</div><div class="lbl">Peak Decade</div>
-      <div style="font-size:0.7rem;color:var(--muted);margin-top:2px">${data.peak_ppa} plays/album</div>
+    <div class="era-hero">
+      <div class="era-label">Your Favorite Decade</div>
+      <div class="era-val">${peakDec}</div>
+      <div class="era-sub">${data.peak_decade_ppa} plays per album on average</div>
     </div>
-    <div class="stat-card"><div class="val">${data.total_classified.toLocaleString()}</div><div class="lbl">Classified Scrobbles</div></div>
+    <div class="era-hero">
+      <div class="era-label">Your Favorite Year in Music History</div>
+      <div class="era-val">${data.peak_year}</div>
+      <div class="era-sub">${data.peak_year_ppa ? data.peak_year_ppa + ' plays per album on average' : ''}</div>
+    </div>
   `;
 
   const dd = data.decade_distribution;

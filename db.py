@@ -572,15 +572,23 @@ def music_era_profile():
             "plays_per_album": round(p / a, 1) if a else 0,
         })
 
-    # peak decade by density (plays per album)
-    peak = max(decade_distribution, key=lambda x: x["plays_per_album"])
+    # peak decade by plays-per-album density
+    peak_decade = max(decade_distribution, key=lambda x: x["plays_per_album"])
+
+    # peak year by plays-per-album density (min 3 albums to filter noise)
+    year_candidates = [
+        (y, round(p / a, 1)) for y, p, a in zip(years, plays, albums) if a >= 3
+    ]
+    if year_candidates:
+        peak_year, peak_year_ppa = max(year_candidates, key=lambda x: x[1])
+    else:
+        peak_year, peak_year_ppa = mode, None
 
     return {
-        "mean":              round(mean, 1),
-        "mode":              mode,
-        "median":            median,
-        "peak_decade":       peak["decade"],
-        "peak_ppa":          peak["plays_per_album"],
+        "peak_decade":       peak_decade["decade"],
+        "peak_decade_ppa":   peak_decade["plays_per_album"],
+        "peak_year":         peak_year,
+        "peak_year_ppa":     peak_year_ppa,
         "total_classified":  total,
         "decade_distribution": decade_distribution,
     }
