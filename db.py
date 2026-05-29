@@ -519,7 +519,9 @@ def music_era_profile():
     """Play-weighted mean, mode, and median release year plus decade distribution."""
     conn = get_conn()
     rows = conn.execute("""
-        SELECT ar.release_year, COUNT(*) AS plays
+        SELECT ar.release_year,
+               COUNT(*) AS plays,
+               COUNT(DISTINCT s.artist || '|' || s.album) AS albums
         FROM scrobbles s
         JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
         WHERE ar.release_year IS NOT NULL
@@ -534,6 +536,7 @@ def music_era_profile():
 
     years  = [r["release_year"] for r in rows]
     plays  = [r["plays"]        for r in rows]
+    albums = [r["albums"]       for r in rows]
     total  = sum(plays)
 
     # weighted mean
@@ -550,20 +553,36 @@ def music_era_profile():
             median = y
             break
 
-    # decade breakdown
-    decade_map = {}
-    for y, p in zip(years, plays):
+    # decade breakdown: plays, albums, and plays-per-album
+    decade_plays  = {}
+    decade_albums = {}
+    for y, p, a in zip(years, plays, albums):
         d = (y // 10) * 10
-        decade_map[d] = decade_map.get(d, 0) + p
+        decade_plays[d]  = decade_plays.get(d, 0)  + p
+        decade_albums[d] = decade_albums.get(d, 0) + a
+
+    decade_distribution = []
+    for d in sorted(decade_plays):
+        p = decade_plays[d]
+        a = decade_albums[d]
+        decade_distribution.append({
+            "decade":          d,
+            "plays":           p,
+            "albums":          a,
+            "plays_per_album": round(p / a, 1) if a else 0,
+        })
+
+    # peak decade by density (plays per album)
+    peak = max(decade_distribution, key=lambda x: x["plays_per_album"])
 
     return {
-        "mean":   round(mean, 1),
-        "mode":   mode,
-        "median": median,
-        "total_classified": total,
-        "decade_distribution": [
-            {"decade": k, "plays": v} for k, v in sorted(decade_map.items())
-        ],
+        "mean":              round(mean, 1),
+        "mode":              mode,
+        "median":            median,
+        "peak_decade":       peak["decade"],
+        "peak_ppa":          peak["plays_per_album"],
+        "total_classified":  total,
+        "decade_distribution": decade_distribution,
     }
 
 

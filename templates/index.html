@@ -318,7 +318,11 @@
     <h2>Your Music Era</h2>
     <p style="font-size:0.8rem;color:var(--muted);margin-bottom:12px">Play-weighted statistics across your entire listening history, based on album release years.</p>
     <div class="stat-grid" id="eraStats"></div>
-    <div class="chart-wrap short" style="margin-top:16px"><canvas id="chartEraDecades"></canvas></div>
+    <div id="eraChartControls" style="display:none;gap:8px;margin-top:16px;margin-bottom:4px">
+      <button class="era-chart-toggle decade-tab" data-mode="plays_per_album">Plays per Album</button>
+      <button class="era-chart-toggle decade-tab" data-mode="plays">Total Plays</button>
+    </div>
+    <div class="chart-wrap short"><canvas id="chartEraDecades"></canvas></div>
     <p id="eraCoverage" style="font-size:0.75rem;color:var(--muted);margin-top:8px;text-align:right"></p>
   </div>
 
@@ -614,19 +618,41 @@ async function loadEraProfile() {
   }
 
   document.getElementById('chartEraDecades').parentElement.style.display = '';
+
+  const peakLabel = data.peak_decade === 2000 ? "'00s" : `'${String(data.peak_decade).slice(2)}s`;
   document.getElementById('eraStats').innerHTML = `
     <div class="stat-card"><div class="val">${Math.round(data.mean)}</div><div class="lbl">Mean Year</div></div>
     <div class="stat-card"><div class="val">${data.median}</div><div class="lbl">Median Year</div></div>
     <div class="stat-card"><div class="val">${data.mode}</div><div class="lbl">Mode Year</div></div>
+    <div class="stat-card" title="Decade with highest plays per album — least affected by how many albums you have from each era">
+      <div class="val">${peakLabel}</div><div class="lbl">Peak Decade</div>
+      <div style="font-size:0.7rem;color:var(--muted);margin-top:2px">${data.peak_ppa} plays/album</div>
+    </div>
     <div class="stat-card"><div class="val">${data.total_classified.toLocaleString()}</div><div class="lbl">Classified Scrobbles</div></div>
   `;
 
   const dd = data.decade_distribution;
-  makeChart('chartEraDecades', 'bar',
-    dd.map(d => d.decade + 's'),
-    [{ label: 'Plays', data: dd.map(d => d.plays), backgroundColor: '#e31c26', borderRadius: 3 }],
-    { plugins: { legend: { display: false } } }
+  window._eraData = dd;
+
+  function drawEraChart(mode) {
+    const isPlays = mode === 'plays';
+    makeChart('chartEraDecades', 'bar',
+      dd.map(d => d.decade === 2000 ? "'00s" : `'${String(d.decade).slice(2)}s`),
+      [{ label: isPlays ? 'Total Plays' : 'Plays per Album',
+         data: dd.map(d => isPlays ? d.plays : d.plays_per_album),
+         backgroundColor: '#e31c26', borderRadius: 3 }],
+      { plugins: { legend: { display: false } } }
+    );
+    document.querySelectorAll('.era-chart-toggle').forEach(b =>
+      b.classList.toggle('active', b.dataset.mode === mode)
+    );
+  }
+
+  document.getElementById('eraChartControls').style.display = 'flex';
+  document.querySelectorAll('.era-chart-toggle').forEach(b =>
+    b.addEventListener('click', () => drawEraChart(b.dataset.mode))
   );
+  drawEraChart('plays_per_album');
 
   const pct = ((data.total_classified / {{ overview.total }}) * 100).toFixed(1);
   document.getElementById('eraCoverage').textContent = `Coverage: ${pct}% of total scrobbles have release year data`;
