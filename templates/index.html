@@ -610,7 +610,7 @@ async function loadEraProfile() {
   if (eraLoaded) return;
   const data = await fetch('/api/music-era').then(r => r.json());
 
-  if (!data || !data.mean) {
+  if (!data || !data.peak_decade) {
     document.getElementById('eraStats').innerHTML =
       `<p style="color:var(--muted);font-size:0.85rem;margin:0">
         No release year data yet. Click <strong>Fetch Release Years</strong> in the header to load album release years (~1 h for large libraries).
