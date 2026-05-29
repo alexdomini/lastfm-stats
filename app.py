@@ -255,15 +255,17 @@ def api_fetch_releases():
                 "api_key": api_key,
                 "format": "json",
             }, timeout=8)
-            info = r.json().get("album", {})
-            raw  = info.get("wiki", {}).get("published", "") or \
-                   info.get("releasedate", "")
-            year = None
-            if raw:
-                import re
-                m = re.search(r'\b(19|20)\d{2}\b', raw)
+            import re
+            info    = r.json().get("album", {})
+            summary = info.get("wiki", {}).get("summary", "")
+            year    = None
+            m = re.search(r'released\b[^.]{0,60}?\b((?:19|20)\d{2})\b', summary)
+            if m:
+                year = int(m.group(1))
+            elif info.get("releasedate", ""):
+                m = re.search(r'\b((?:19|20)\d{2})\b', info["releasedate"])
                 if m:
-                    year = int(m.group())
+                    year = int(m.group(1))
             db.save_album_release(artist, album, year)
             results[album] = year
         except Exception:

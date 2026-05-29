@@ -30,12 +30,19 @@ def _get_release_year(artist, album):
             "api_key": API_KEY,
             "format":  "json",
         }, timeout=8)
-        info = r.json().get("album", {})
-        raw  = info.get("wiki", {}).get("published", "") or info.get("releasedate", "")
+        info    = r.json().get("album", {})
+        summary = info.get("wiki", {}).get("summary", "")
+        raw     = info.get("releasedate", "")
+
+        # 1. "released … 1979" in the summary is the most reliable source
+        m = re.search(r'released\b[^.]{0,60}?\b((?:19|20)\d{2})\b', summary)
+        if m:
+            return int(m.group(1))
+        # 2. explicit releasedate field (rarely populated but accurate when present)
         if raw:
-            m = re.search(r'\b(19|20)\d{2}\b', raw)
+            m = re.search(r'\b((?:19|20)\d{2})\b', raw)
             if m:
-                return int(m.group())
+                return int(m.group(1))
     except Exception:
         pass
     return None
@@ -52,12 +59,14 @@ def run(on_progress=None):
     db.init_db()
     conn = db.get_conn()
 
+    # Include albums already cached with a non-null year so bad wiki dates get corrected.
+    # Albums cached as NULL are skipped — the API truly had no data for them.
     pairs = conn.execute("""
         SELECT DISTINCT s.artist, s.album
         FROM scrobbles s
         LEFT JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
         WHERE s.album != ''
-          AND ar.artist IS NULL
+          AND (ar.artist IS NULL OR ar.release_year IS NOT NULL)
         ORDER BY s.artist, s.album
     """).fetchall()
     conn.close()
