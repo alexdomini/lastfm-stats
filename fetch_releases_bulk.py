@@ -21,7 +21,26 @@ API_KEY  = os.getenv("LASTFM_API_KEY", "")
 API_BASE = "https://ws.audioscrobbler.com/2.0/"
 
 
+MB_API = "https://musicbrainz.org/ws/2/"
+MB_HEADERS = {"User-Agent": "lastfm-stats/1.0 (alexdomini@gmail.com)"}
+
+
+def _year_from_mb(mbid):
+    """Look up first-release-date from MusicBrainz using a release mbid."""
+    try:
+        r = requests.get(f"{MB_API}release/{mbid}",
+                         params={"fmt": "json", "inc": "release-groups"},
+                         headers=MB_HEADERS, timeout=12)
+        date = r.json().get("release-group", {}).get("first-release-date", "")
+        if date:
+            return int(date[:4])
+    except Exception:
+        pass
+    return None
+
+
 def _get_release_year(artist, album):
+    """Returns (year, used_musicbrainz). year is None if not found."""
     try:
         r = requests.get(API_BASE, params={
             "method":  "album.getInfo",
@@ -33,19 +52,23 @@ def _get_release_year(artist, album):
         info    = r.json().get("album", {})
         summary = info.get("wiki", {}).get("summary", "")
         raw     = info.get("releasedate", "")
+        mbid    = info.get("mbid", "")
 
-        # 1. "released … 1979" in the summary is the most reliable source
+        # 1. "released … YEAR" in the wiki summary
         m = re.search(r'released\b[^.]{0,60}?\b((?:19|20)\d{2})\b', summary)
         if m:
-            return int(m.group(1))
-        # 2. explicit releasedate field (rarely populated but accurate when present)
+            return int(m.group(1)), False
+        # 2. explicit releasedate field (rarely populated but accurate)
         if raw:
             m = re.search(r'\b((?:19|20)\d{2})\b', raw)
             if m:
-                return int(m.group(1))
+                return int(m.group(1)), False
+        # 3. MusicBrainz via mbid — catches artists with no Last.fm wiki
+        if mbid:
+            return _year_from_mb(mbid), True
     except Exception:
         pass
-    return None
+    return None, False
 
 
 def run(on_progress=None):
@@ -59,15 +82,12 @@ def run(on_progress=None):
     db.init_db()
     conn = db.get_conn()
 
-    # Include albums already cached with a non-null year so bad wiki dates get corrected.
-    # Albums cached as NULL are skipped — the API truly had no data for them.
+    # Fetch all albums (uncached, null, or previously wrong) — MusicBrainz
+    # fallback now resolves artists with no Last.fm wiki (e.g. Spanish artists).
     pairs = conn.execute("""
-        SELECT DISTINCT s.artist, s.album
-        FROM scrobbles s
-        LEFT JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
-        WHERE s.album != ''
-          AND (ar.artist IS NULL OR ar.release_year IS NOT NULL)
-        ORDER BY s.artist, s.album
+        SELECT DISTINCT artist, album FROM scrobbles
+        WHERE album != ''
+        ORDER BY artist, album
     """).fetchall()
     conn.close()
 
@@ -79,7 +99,7 @@ def run(on_progress=None):
 
     for i, row in enumerate(pairs):
         artist, album = row["artist"], row["album"]
-        year = _get_release_year(artist, album)
+        year, used_mb = _get_release_year(artist, album)
         db.save_album_release(artist, album, year)
         if year:
             found += 1
@@ -90,7 +110,8 @@ def run(on_progress=None):
                 msg = f'Found {year}: "{album}" by {artist}'
             on_progress(i + 1, total, found, msg)
 
-        time.sleep(0.22)
+        # MusicBrainz rate limit is 1 req/s; add extra sleep when it was used
+        time.sleep(0.22 + (0.8 if used_mb else 0))
 
     if on_progress:
         on_progress(total, total, found,
