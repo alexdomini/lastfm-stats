@@ -601,8 +601,19 @@ let eraLoaded = false;
 async function loadEraProfile() {
   if (eraLoaded) return;
   const data = await fetch('/api/music-era').then(r => r.json());
-  if (!data || !data.mean) return;
 
+  if (!data || !data.mean) {
+    document.getElementById('eraStats').innerHTML =
+      `<p style="color:var(--muted);font-size:0.85rem;margin:0">
+        No release year data yet. Click <strong>Fetch Release Years</strong> in the header to load album release years (~1 h for large libraries).
+      </p>`;
+    document.getElementById('chartEraDecades').parentElement.style.display = 'none';
+    document.getElementById('eraCoverage').textContent = '';
+    document.getElementById('eraProfileCard').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('chartEraDecades').parentElement.style.display = '';
   document.getElementById('eraStats').innerHTML = `
     <div class="stat-card"><div class="val">${Math.round(data.mean)}</div><div class="lbl">Mean Year</div></div>
     <div class="stat-card"><div class="val">${data.median}</div><div class="lbl">Median Year</div></div>
@@ -619,9 +630,7 @@ async function loadEraProfile() {
 
   const pct = ((data.total_classified / {{ overview.total }}) * 100).toFixed(1);
   document.getElementById('eraCoverage').textContent = `Coverage: ${pct}% of total scrobbles have release year data`;
-  document.getElementById('eraProfileCard').style.display = 'block';
   buildDecadeButtons(dd);
-  document.getElementById('decadeBrowserCard').style.display = 'block';
   eraLoaded = true;
 }
 
@@ -642,19 +651,33 @@ async function loadDecade(decade) {
   document.querySelectorAll('.decade-btn-item').forEach(b => {
     b.classList.toggle('active', parseInt(b.dataset.decade) === decade);
   });
+
+  const loading = '<li style="color:var(--muted);padding:8px 0;font-size:0.85rem">Loading…</li>';
+  ['decadeArtists','decadeAlbums','decadeTracks'].forEach(id =>
+    document.getElementById(id).innerHTML = loading
+  );
+  showDecadeTab('artists');
+  document.getElementById('decadeContent').style.display = 'block';
+
   const data = await fetch(`/api/top-by-decade?decade=${decade}&limit=10`).then(r => r.json());
   currentDecadeData = data;
 
-  rankList('decadeArtists', data.artists, r => r.artist, null);
-  rankList('decadeAlbums',  data.albums,  r => r.album,  r => `${r.artist} · ${r.release_year}`);
-  rankList('decadeTracks',  data.tracks,  r => r.track,  r => r.artist);
+  const label = d => d === 2000 ? "'00s" : `'${String(d).slice(2)}s`;
+  const noData = `<li style="color:var(--muted);padding:8px 0;font-size:0.85rem">
+    No data for the ${label(decade)} yet — click <strong>Fetch Release Years</strong> in the header to load album release years.</li>`;
+
+  if (data.artists.length) rankList('decadeArtists', data.artists, r => r.artist, null);
+  else document.getElementById('decadeArtists').innerHTML = noData;
+
+  if (data.albums.length)  rankList('decadeAlbums', data.albums, r => r.album, r => `${r.artist} · ${r.release_year}`);
+  else document.getElementById('decadeAlbums').innerHTML = noData;
+
+  if (data.tracks.length)  rankList('decadeTracks', data.tracks, r => r.track, r => r.artist);
+  else document.getElementById('decadeTracks').innerHTML = noData;
 
   const pct = data.total > 0 ? ((data.classified / data.total) * 100).toFixed(1) : 0;
   document.getElementById('decadeCoverage').textContent =
     `Based on ${pct}% of scrobbles with release year data`;
-
-  showDecadeTab('artists');
-  document.getElementById('decadeContent').style.display = 'block';
 }
 
 function showDecadeTab(tab, btn) {
@@ -673,7 +696,16 @@ function onSectionActivate(name) {
   if (name === 'tops')      loadTops();
   if (name === 'patterns')  loadPatterns();
   if (name === 'trending')  loadTrending();
-  if (name === 'wrapped') loadEraProfile();
+  if (name === 'wrapped') {
+    document.getElementById('eraProfileCard').style.display = 'block';
+    document.getElementById('decadeBrowserCard').style.display = 'block';
+    if (!eraLoaded) {
+      document.getElementById('eraStats').innerHTML =
+        '<p style="color:var(--muted);font-size:0.85rem;margin:0">Loading…</p>';
+    }
+    buildDecadeButtons([]);
+    loadEraProfile();
+  }
 }
 
 loadOverview();
