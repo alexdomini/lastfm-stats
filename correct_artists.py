@@ -43,9 +43,12 @@ def _get_correction(artist_name):
 def run(on_progress=None):
     db.init_db()
     conn = db.get_conn()
-    artists = [r[0] for r in conn.execute(
-        "SELECT DISTINCT artist FROM scrobbles ORDER BY artist"
-    ).fetchall()]
+    artists = [r[0] for r in conn.execute("""
+        SELECT DISTINCT s.artist FROM scrobbles s
+        LEFT JOIN checked_artists ca ON s.artist = ca.artist
+        WHERE ca.artist IS NULL
+        ORDER BY s.artist
+    """).fetchall()]
     conn.close()
 
     total = len(artists)
@@ -54,6 +57,7 @@ def run(on_progress=None):
     if on_progress:
         on_progress(0, total, f"Checking {total:,} unique artists...")
 
+    now = int(time.time())
     for i, artist in enumerate(artists):
         corrected = _get_correction(artist)
         if corrected:
@@ -65,6 +69,14 @@ def run(on_progress=None):
                 msg = f'Corrected: "{artist}" -> "{corrected}"'
             on_progress(i + 1, total, msg)
 
+        conn = db.get_conn()
+        conn.execute(
+            "INSERT OR IGNORE INTO checked_artists(artist, checked_at) VALUES(?, ?)",
+            (artist, now)
+        )
+        conn.commit()
+        conn.close()
+
         time.sleep(0.22)
 
     if corrections:
@@ -73,6 +85,11 @@ def run(on_progress=None):
             conn.execute(
                 "UPDATE scrobbles SET artist = ? WHERE artist = ?",
                 (right, wrong)
+            )
+            # mark the canonical name as already checked
+            conn.execute(
+                "INSERT OR IGNORE INTO checked_artists(artist, checked_at) VALUES(?, ?)",
+                (right, now)
             )
         conn.commit()
         conn.close()

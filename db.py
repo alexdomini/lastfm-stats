@@ -33,6 +33,10 @@ def init_db():
             fetched_at  INTEGER NOT NULL,
             PRIMARY KEY (artist, album)
         );
+        CREATE TABLE IF NOT EXISTS checked_artists (
+            artist      TEXT PRIMARY KEY,
+            checked_at  INTEGER NOT NULL
+        );
     """)
     conn.commit()
     conn.close()

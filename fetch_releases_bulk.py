@@ -82,12 +82,13 @@ def run(on_progress=None):
     db.init_db()
     conn = db.get_conn()
 
-    # Fetch all albums (uncached, null, or previously wrong) — MusicBrainz
-    # fallback now resolves artists with no Last.fm wiki (e.g. Spanish artists).
     pairs = conn.execute("""
-        SELECT DISTINCT artist, album FROM scrobbles
-        WHERE album != ''
-        ORDER BY artist, album
+        SELECT DISTINCT s.artist, s.album
+        FROM scrobbles s
+        LEFT JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
+        WHERE s.album != ''
+          AND (ar.artist IS NULL OR ar.release_year IS NULL)
+        ORDER BY s.artist, s.album
     """).fetchall()
     conn.close()
 
