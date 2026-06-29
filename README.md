@@ -14,8 +14,11 @@ A local web dashboard that downloads your complete Last.fm scrobble history and 
 - **Trending artists** — linear regression over weekly / monthly / yearly windows
 - **Listening patterns** — hour-of-day and day-of-week heatmaps
 - **Wrapped** — year-in-review: top artists, albums, tracks, and newly discovered artists
+- **Music Era Profile** — your favorite decade and peak year by plays-per-album density, with a full decade distribution chart
+- **Decade Browser** — top artists, albums, and tracks broken down by release decade
 - **Artist profiles** — click any artist name for a full modal: first/last listen, top tracks, album stats, monthly activity chart
 - **Artist name correction** — uses Last.fm's `artist.getCorrection` API to normalize inconsistent spellings in your history
+- **Release year fetching** — bulk-fetches album release years from Last.fm and MusicBrainz, powering the era features
 
 ## Requirements
 
@@ -48,7 +51,8 @@ LASTFM_USER=your_lastfm_username
 
 1. Click **Sync** to download your scrobble history (first sync can take a few minutes for large libraries)
 2. Explore the dashboard sections: Timeline, Top Lists, Patterns, Trending, Wrapped
-3. Optionally click **Correct Artist Names** to normalize artist name variations using Last.fm's correction API
+3. Optionally click **Fetch Release Years** to enable the Music Era Profile and Decade Browser (fetches from Last.fm + MusicBrainz; only missing albums are queried on subsequent runs)
+4. Optionally click **Correct Artist Names** to normalize artist name variations using Last.fm's correction API
 
 ## Tech stack
 
