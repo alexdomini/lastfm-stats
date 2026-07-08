@@ -58,10 +58,12 @@ def run(on_progress=None):
         on_progress(0, total, f"Checking {total:,} unique artists...")
 
     now = int(time.time())
+    checked = []
     for i, artist in enumerate(artists):
         corrected = _get_correction(artist)
         if corrected:
             corrections[artist] = corrected
+        checked.append(artist)
 
         if on_progress:
             msg = f"{i+1}/{total} — {len(corrections)} corrections found"
@@ -69,30 +71,25 @@ def run(on_progress=None):
                 msg = f'Corrected: "{artist}" -> "{corrected}"'
             on_progress(i + 1, total, msg)
 
-        conn = db.get_conn()
+        time.sleep(0.22)
+
+    conn = db.get_conn()
+    for artist in checked:
         conn.execute(
             "INSERT OR IGNORE INTO checked_artists(artist, checked_at) VALUES(?, ?)",
             (artist, now)
         )
-        conn.commit()
-        conn.close()
-
-        time.sleep(0.22)
-
-    if corrections:
-        conn = db.get_conn()
-        for wrong, right in corrections.items():
-            conn.execute(
-                "UPDATE scrobbles SET artist = ? WHERE artist = ?",
-                (right, wrong)
-            )
-            # mark the canonical name as already checked
-            conn.execute(
-                "INSERT OR IGNORE INTO checked_artists(artist, checked_at) VALUES(?, ?)",
-                (right, now)
-            )
-        conn.commit()
-        conn.close()
+    for wrong, right in corrections.items():
+        conn.execute(
+            "UPDATE scrobbles SET artist = ? WHERE artist = ?",
+            (right, wrong)
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO checked_artists(artist, checked_at) VALUES(?, ?)",
+            (right, now)
+        )
+    conn.commit()
+    conn.close()
 
     if on_progress:
         on_progress(total, total,
