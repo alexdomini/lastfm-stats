@@ -39,6 +39,23 @@ def _year_from_mb(mbid):
     return None
 
 
+def _year_from_mb_search(artist, album):
+    """Search MusicBrainz by artist+album name and return the first-release-date."""
+    try:
+        query = f'releasegroup:"{album}" AND artist:"{artist}"'
+        r = requests.get(f"{MB_API}release-group",
+                         params={"query": query, "fmt": "json", "limit": 1},
+                         headers=MB_HEADERS, timeout=12)
+        groups = r.json().get("release-groups", [])
+        if groups:
+            date = groups[0].get("first-release-date", "")
+            if date:
+                return int(date[:4])
+    except Exception:
+        pass
+    return None
+
+
 def _get_release_year(artist, album):
     """Returns (year, used_musicbrainz). year is None if not found."""
     try:
@@ -63,9 +80,15 @@ def _get_release_year(artist, album):
             m = re.search(r'\b((?:19|20)\d{2})\b', raw)
             if m:
                 return int(m.group(1)), False
-        # 3. MusicBrainz via mbid — catches artists with no Last.fm wiki
+        # 3. MusicBrainz via mbid
         if mbid:
-            return _year_from_mb(mbid), True
+            year = _year_from_mb(mbid)
+            if year:
+                return year, True
+        # 4. MusicBrainz name search — catches albums with no Last.fm mbid
+        year = _year_from_mb_search(artist, album)
+        if year:
+            return year, True
     except Exception:
         pass
     return None, False
