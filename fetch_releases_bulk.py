@@ -87,7 +87,7 @@ def run(on_progress=None):
         FROM scrobbles s
         LEFT JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
         WHERE s.album != ''
-          AND (ar.artist IS NULL OR ar.release_year IS NULL)
+          AND ar.artist IS NULL
         ORDER BY s.artist, s.album
     """).fetchall()
     conn.close()
