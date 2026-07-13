@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Last.fm Stats — {{ username }}</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/css/jsvectormap.min.css">
+<script src="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/js/jsvectormap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsvectormap@1.5.3/dist/maps/world.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -21,14 +24,21 @@
   .sync-area { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .sync-info { font-size: 0.75rem; color: var(--muted); }
 
-  #btnSync, #btnCorrect, #btnFetchReleases { background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  #btnSync, #btnCorrect, #btnFetchReleases, #btnCountries { background: var(--bg3); border: 1px solid var(--border); color: var(--text);
     padding: 6px 16px; border-radius: 6px; font-size: 0.85rem; cursor: pointer;
     display: flex; align-items: center; gap: 7px; transition: background 0.15s; white-space: nowrap; }
-  #btnSync:hover:not(:disabled), #btnCorrect:hover:not(:disabled), #btnFetchReleases:hover:not(:disabled) { background: #252545; }
-  #btnSync:disabled, #btnCorrect:disabled, #btnFetchReleases:disabled { opacity: 0.5; cursor: not-allowed; }
-  #btnSync .dot, #btnCorrect .dot, #btnFetchReleases .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-  #btnSync.syncing .dot, #btnCorrect.syncing .dot, #btnFetchReleases.syncing .dot { background: var(--acc2); animation: pulse 1s infinite; }
-  #btnSync.done .dot, #btnCorrect.done .dot, #btnFetchReleases.done .dot { background: #4caf50; }
+  #btnSync:hover:not(:disabled), #btnCorrect:hover:not(:disabled), #btnFetchReleases:hover:not(:disabled), #btnCountries:hover:not(:disabled) { background: #252545; }
+  #btnSync:disabled, #btnCorrect:disabled, #btnFetchReleases:disabled, #btnCountries:disabled { opacity: 0.5; cursor: not-allowed; }
+  #btnSync .dot, #btnCorrect .dot, #btnFetchReleases .dot, #btnCountries .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  #btnSync.syncing .dot, #btnCorrect.syncing .dot, #btnFetchReleases.syncing .dot, #btnCountries.syncing .dot { background: var(--acc2); animation: pulse 1s infinite; }
+  #btnSync.done .dot, #btnCorrect.done .dot, #btnFetchReleases.done .dot, #btnCountries.done .dot { background: #4caf50; }
+
+  /* ── world map ── */
+  #worldMap { width: 100%; height: 480px; }
+  .jvm-tooltip { background: var(--bg2) !important; border: 1px solid var(--border) !important;
+    color: var(--text) !important; border-radius: 8px !important; padding: 10px 14px !important;
+    font-family: 'Segoe UI', system-ui, sans-serif !important; font-size: 0.82rem !important; min-width: 160px; }
+  .map-coverage { font-size: 0.75rem; color: var(--muted); text-align: right; margin-top: 8px; }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 
   .sync-progress { display: none; flex-direction: column; gap: 4px; min-width: 220px; }
@@ -145,6 +155,9 @@
       <div class="sync-progress-msg" id="syncMsg"></div>
     </div>
     <div class="sync-info" id="syncInfo">{% if last_sync %}Last sync: {{ last_sync }}{% endif %}</div>
+    <button id="btnCountries" onclick="startFetchCountries()" title="Fetch artist countries from MusicBrainz (top 1000 artists)">
+      <span class="dot"></span> Fetch Artist Countries
+    </button>
     <button id="btnFetchReleases" onclick="startFetchReleases()" title="Fetch release years for all uncached albums (~1 hour for large libraries)">
       <span class="dot"></span> Fetch Release Years
     </button>
@@ -163,6 +176,7 @@
   <a href="#" data-section="tops">Top Artists / Albums / Tracks</a>
   <a href="#" data-section="patterns">Listening Patterns</a>
   <a href="#" data-section="trending">Trending</a>
+  <a href="#" data-section="worldmap">World Map</a>
   <a href="#" data-section="wrapped">Wrapped</a>
 </nav>
 
@@ -302,6 +316,19 @@
   <div class="card">
     <h2 id="trendingTitle">Growing Artists</h2>
     <ul class="rank-list" id="trendingList" style="margin-top:8px"></ul>
+  </div>
+</div>
+
+<!-- WORLD MAP -->
+<div id="sec-worldmap" class="section">
+  <div class="card">
+    <h2>Artists by Country</h2>
+    <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px">
+      Countries highlighted by total plays from artists of that origin. Hover to see your top 5 artists per country.
+      Click <strong>Fetch Artist Countries</strong> in the header to populate the map.
+    </p>
+    <div id="worldMap"></div>
+    <p class="map-coverage" id="mapCoverage"></p>
   </div>
 </div>
 
@@ -722,6 +749,67 @@ function showDecadeTab(tab, btn) {
   (btn || document.querySelector(`.decade-tab[data-tab="${tab}"]`))?.classList.add('active');
 }
 
+// ── world map ─────────────────────────────────────────────────────────────
+let _worldMap = null;
+let _worldMapCountryData = {};
+
+async function loadWorldMap() {
+  const data = await fetch('/api/artist-world-map').then(r => r.json());
+  _worldMapCountryData = data;
+
+  const values = {};
+  Object.entries(data).forEach(([cc, d]) => { values[cc] = d.total_plays; });
+
+  const hasData = Object.keys(values).length > 0;
+
+  if (_worldMap) {
+    _worldMap.destroy();
+    _worldMap = null;
+  }
+
+  _worldMap = new jsVectorMap({
+    selector: '#worldMap',
+    map: 'world',
+    zoomOnScroll: true,
+    zoomButtons: true,
+    regionStyle: {
+      initial:  { fill: '#1c1c38', stroke: '#2a2a4a', strokeWidth: 0.5 },
+      hover:    { fill: '#ff6b35', fillOpacity: 0.9, cursor: hasData ? 'pointer' : 'default' },
+      selected: { fill: '#e31c26' },
+    },
+    ...(hasData && {
+      series: {
+        regions: [{
+          attribute: 'fill',
+          scale: ['#2d2060', '#e31c26'],
+          values,
+          normalizeFunction: 'polynomial',
+        }],
+      },
+    }),
+    onRegionTooltipShow(event, tooltip, code) {
+      const d = _worldMapCountryData[code];
+      if (!d) { event.preventDefault(); return; }
+      const rows = d.artists.map((a, i) =>
+        `<div style="display:flex;justify-content:space-between;gap:16px;padding:2px 0">
+          <span>${i+1}. ${esc(a.artist)}</span>
+          <span style="color:var(--muted)">${a.plays.toLocaleString()}</span>
+        </div>`
+      ).join('');
+      tooltip.text(`
+        <div style="font-weight:700;margin-bottom:6px">${tooltip.text()}</div>
+        <div style="color:#aaa;font-size:.78rem;margin-bottom:8px">${d.total_plays.toLocaleString()} total plays</div>
+        ${rows}
+      `, true);
+    },
+  });
+
+  const covered = Object.keys(values).length;
+  const totalArtists = await fetch('/api/top-artists?limit=1').then(r=>r.json()).then(() => null).catch(() => null);
+  document.getElementById('mapCoverage').textContent =
+    hasData ? `${covered} countries mapped` : 'No data yet — click Fetch Artist Countries in the header.';
+}
+
 // ── section activation router ─────────────────────────────────────────────
 function onSectionActivate(name) {
   if (name === 'overview')  loadOverview();
@@ -729,6 +817,7 @@ function onSectionActivate(name) {
   if (name === 'tops')      loadTops();
   if (name === 'patterns')  loadPatterns();
   if (name === 'trending')  loadTrending();
+  if (name === 'worldmap')  loadWorldMap();
   if (name === 'wrapped') {
     document.getElementById('eraProfileCard').style.display = 'block';
     document.getElementById('decadeBrowserCard').style.display = 'block';
@@ -884,6 +973,52 @@ document.addEventListener('click', e => {
   const link = e.target.closest('.artist-link');
   if (link) openArtist(link.dataset.artist);
 });
+
+// ── fetch artist countries ────────────────────────────────────────────────
+let _countryPoll = null;
+
+async function startFetchCountries() {
+  const btn = document.getElementById('btnCountries');
+  btn.disabled = true;
+  const res = await fetch('/api/fetch-artist-countries', { method: 'POST' }).then(r => r.json());
+  if (!res.ok) {
+    alert(res.error || 'Could not start fetch.');
+    btn.disabled = false;
+    return;
+  }
+  btn.classList.add('syncing');
+  document.getElementById('syncProgress').classList.add('visible');
+  _countryPoll = setInterval(pollFetchCountries, 1500);
+}
+
+async function pollFetchCountries() {
+  const s   = await fetch('/api/fetch-artist-countries/status').then(r => r.json());
+  const btn = document.getElementById('btnCountries');
+  const bar = document.getElementById('syncBar');
+  const msg = document.getElementById('syncMsg');
+
+  msg.textContent = s.message || '';
+  bar.style.width = s.total > 0 ? Math.round(s.done / s.total * 100) + '%' : (s.running ? '5%' : '100%');
+
+  if (!s.running) {
+    clearInterval(_countryPoll);
+    _countryPoll = null;
+    btn.classList.remove('syncing');
+    btn.disabled = false;
+    if (s.error) {
+      msg.textContent = 'Error: ' + s.error;
+    } else {
+      btn.classList.add('done');
+      bar.style.width = '100%';
+      setTimeout(() => {
+        loadWorldMap();
+        btn.classList.remove('done');
+        document.getElementById('syncProgress').classList.remove('visible');
+        bar.style.width = '0%';
+      }, 2500);
+    }
+  }
+}
 
 // ── fetch release years (bulk) ────────────────────────────────────────────
 let _relPoll = null;

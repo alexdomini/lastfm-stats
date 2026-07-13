@@ -37,6 +37,11 @@ def init_db():
             artist      TEXT PRIMARY KEY,
             checked_at  INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS artist_countries (
+            artist       TEXT PRIMARY KEY,
+            country_code TEXT,
+            fetched_at   INTEGER NOT NULL
+        );
     """)
     conn.commit()
     conn.close()
@@ -596,6 +601,30 @@ def music_era_profile():
         "total_classified":  total,
         "decade_distribution": decade_distribution,
     }
+
+
+def artist_world_map():
+    """Returns {country_code: {total_plays, artists: [{artist, plays}]}} for the map."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT ac.country_code, s.artist, COUNT(*) AS plays
+        FROM scrobbles s
+        JOIN artist_countries ac ON s.artist = ac.artist
+        WHERE ac.country_code IS NOT NULL
+        GROUP BY ac.country_code, s.artist
+        ORDER BY ac.country_code, plays DESC
+    """).fetchall()
+    conn.close()
+
+    result = {}
+    for row in rows:
+        cc = row["country_code"]
+        if cc not in result:
+            result[cc] = {"total_plays": 0, "artists": []}
+        result[cc]["total_plays"] += row["plays"]
+        if len(result[cc]["artists"]) < 5:
+            result[cc]["artists"].append({"artist": row["artist"], "plays": row["plays"]})
+    return result
 
 
 def _ts_filter(ts_from, ts_to):

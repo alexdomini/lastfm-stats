@@ -34,6 +34,14 @@ _bulk_rel = {
     "message": "",
     "error": "",
 }
+_country = {
+    "running": False,
+    "done": 0,
+    "total": 0,
+    "found": 0,
+    "message": "",
+    "error": "",
+}
 _sync_lock = threading.Lock()
 
 
@@ -304,6 +312,43 @@ def api_fetch_releases_bulk_start():
 def api_fetch_releases_bulk_status():
     with _sync_lock:
         return jsonify(dict(_bulk_rel))
+
+
+@app.route("/api/fetch-artist-countries", methods=["POST"])
+def api_fetch_artist_countries_start():
+    with _sync_lock:
+        if any([_country["running"], _sync["running"], _correct["running"], _bulk_rel["running"]]):
+            return jsonify({"ok": False, "error": "An operation is already running."})
+        _country.update(running=True, done=0, total=0, found=0,
+                        message="Loading artists…", error="")
+
+    def _run():
+        import fetch_artist_countries
+        try:
+            def on_progress(done, total, found, message):
+                with _sync_lock:
+                    _country.update(done=done, total=total, found=found, message=message)
+            fetch_artist_countries.run(on_progress=on_progress)
+        except Exception as e:
+            with _sync_lock:
+                _country["error"] = str(e)
+        finally:
+            with _sync_lock:
+                _country["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/fetch-artist-countries/status")
+def api_fetch_artist_countries_status():
+    with _sync_lock:
+        return jsonify(dict(_country))
+
+
+@app.route("/api/artist-world-map")
+def api_artist_world_map():
+    return jsonify(db.artist_world_map())
 
 
 @app.route("/api/top-by-decade")
