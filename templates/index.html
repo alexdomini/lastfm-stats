@@ -24,14 +24,30 @@
   .sync-area { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .sync-info { font-size: 0.75rem; color: var(--muted); }
 
-  #btnSync, #btnCorrect, #btnFetchReleases, #btnCountries { background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  #btnSync, #btnEnrich { background: var(--bg3); border: 1px solid var(--border); color: var(--text);
     padding: 6px 16px; border-radius: 6px; font-size: 0.85rem; cursor: pointer;
     display: flex; align-items: center; gap: 7px; transition: background 0.15s; white-space: nowrap; }
-  #btnSync:hover:not(:disabled), #btnCorrect:hover:not(:disabled), #btnFetchReleases:hover:not(:disabled), #btnCountries:hover:not(:disabled) { background: #252545; }
-  #btnSync:disabled, #btnCorrect:disabled, #btnFetchReleases:disabled, #btnCountries:disabled { opacity: 0.5; cursor: not-allowed; }
-  #btnSync .dot, #btnCorrect .dot, #btnFetchReleases .dot, #btnCountries .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-  #btnSync.syncing .dot, #btnCorrect.syncing .dot, #btnFetchReleases.syncing .dot, #btnCountries.syncing .dot { background: var(--acc2); animation: pulse 1s infinite; }
-  #btnSync.done .dot, #btnCorrect.done .dot, #btnFetchReleases.done .dot, #btnCountries.done .dot { background: #4caf50; }
+  #btnSync:hover:not(:disabled), #btnEnrich:hover:not(:disabled) { background: #252545; }
+  #btnSync:disabled, #btnEnrich:disabled { opacity: 0.5; cursor: not-allowed; }
+  #btnSync .dot, #btnEnrich .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  #btnSync.syncing .dot, #btnEnrich.syncing .dot { background: var(--acc2); animation: pulse 1s infinite; }
+  #btnSync.done .dot, #btnEnrich.done .dot { background: #4caf50; }
+
+  /* ── enrich dropdown ── */
+  .enrich-wrap { position: relative; }
+  .enrich-menu { display: none; position: absolute; top: calc(100% + 8px); right: 0; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 10px; min-width: 290px; overflow: hidden;
+    z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,.5); }
+  .enrich-item { display: flex; align-items: center; gap: 14px; padding: 14px 16px; cursor: pointer;
+    border-bottom: 1px solid var(--border); transition: background 0.12s; }
+  .enrich-item:last-child { border-bottom: none; }
+  .enrich-item:hover { background: var(--bg3); }
+  .enrich-item.is-disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+  .item-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background 0.2s; }
+  .item-dot.done { background: #4caf50; }
+  .item-dot.running { background: var(--acc2); animation: pulse 1s infinite; }
+  .item-title { font-size: 0.875rem; font-weight: 600; color: var(--text); }
+  .item-desc { font-size: 0.75rem; color: var(--muted); margin-top: 2px; line-height: 1.4; }
 
   /* ── world map ── */
   #worldMap { width: 100%; height: 480px; }
@@ -155,15 +171,34 @@
       <div class="sync-progress-msg" id="syncMsg"></div>
     </div>
     <div class="sync-info" id="syncInfo">{% if last_sync %}Last sync: {{ last_sync }}{% endif %}</div>
-    <button id="btnCountries" onclick="startFetchCountries()" title="Fetch artist countries from MusicBrainz (top 1000 artists)">
-      <span class="dot"></span> Fetch Artist Countries
-    </button>
-    <button id="btnFetchReleases" onclick="startFetchReleases()" title="Fetch release years for all uncached albums (~1 hour for large libraries)">
-      <span class="dot"></span> Fetch Release Years
-    </button>
-    <button id="btnCorrect" onclick="startCorrect()" title="Fix artist names using Last.fm corrections">
-      <span class="dot"></span> Fix Artist Names
-    </button>
+    <div class="enrich-wrap" id="enrichWrap">
+      <button id="btnEnrich" onclick="toggleEnrichMenu(event)">
+        <span class="dot" id="enrichDot"></span> Enrich ▾
+      </button>
+      <div class="enrich-menu" id="enrichMenu">
+        <div class="enrich-item" id="itemCorrect" onclick="startCorrect()">
+          <span class="item-dot" id="dotCorrect"></span>
+          <div>
+            <div class="item-title">Fix Artist Names</div>
+            <div class="item-desc">Correct typos and variants using Last.fm data</div>
+          </div>
+        </div>
+        <div class="enrich-item" id="itemReleases" onclick="startFetchReleases()">
+          <span class="item-dot" id="dotReleases"></span>
+          <div>
+            <div class="item-title">Fetch Release Years</div>
+            <div class="item-desc">Find album release years via Last.fm &amp; MusicBrainz (~1 hr for large libraries)</div>
+          </div>
+        </div>
+        <div class="enrich-item" id="itemCountries" onclick="startFetchCountries()">
+          <span class="item-dot" id="dotCountries"></span>
+          <div>
+            <div class="item-title">Map Artist Countries</div>
+            <div class="item-desc">Locate artists on the world map using MusicBrainz</div>
+          </div>
+        </div>
+      </div>
+    </div>
     <button id="btnSync" onclick="startSync()">
       <span class="dot"></span> Sync
     </button>
@@ -831,6 +866,7 @@ function onSectionActivate(name) {
 }
 
 loadOverview();
+loadEnrichStatus();
 
 // ── trending ──────────────────────────────────────────────────────────────
 let trendingLoaded = null;
@@ -974,26 +1010,72 @@ document.addEventListener('click', e => {
   if (link) openArtist(link.dataset.artist);
 });
 
+// ── enrich dropdown ───────────────────────────────────────────────────────
+function toggleEnrichMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('enrichMenu');
+  menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+}
+document.addEventListener('click', () => {
+  document.getElementById('enrichMenu').style.display = 'none';
+});
+
+function _setItemRunning(dotId, itemId, running) {
+  const dot  = document.getElementById(dotId);
+  const item = document.getElementById(itemId);
+  if (running) {
+    dot.classList.add('running');
+    dot.classList.remove('done');
+    item.classList.add('is-disabled');
+  } else {
+    dot.classList.remove('running');
+    item.classList.remove('is-disabled');
+  }
+  _updateEnrichDot();
+}
+
+function _setItemDone(dotId) {
+  const dot = document.getElementById(dotId);
+  dot.classList.remove('running');
+  dot.classList.add('done');
+  _updateEnrichDot();
+}
+
+function _updateEnrichDot() {
+  const anyRunning = document.querySelector('.item-dot.running');
+  const allDone    = [...document.querySelectorAll('.item-dot')].every(d => d.classList.contains('done'));
+  const mainDot    = document.getElementById('enrichDot');
+  mainDot.className = 'dot' + (anyRunning ? ' syncing' : allDone ? ' done' : '');
+}
+
+async function loadEnrichStatus() {
+  try {
+    const s = await fetch('/api/enrichment-status').then(r => r.json());
+    if (s.correct)   document.getElementById('dotCorrect').classList.add('done');
+    if (s.releases)  document.getElementById('dotReleases').classList.add('done');
+    if (s.countries) document.getElementById('dotCountries').classList.add('done');
+    _updateEnrichDot();
+  } catch(e) {}
+}
+
 // ── fetch artist countries ────────────────────────────────────────────────
 let _countryPoll = null;
 
 async function startFetchCountries() {
-  const btn = document.getElementById('btnCountries');
-  btn.disabled = true;
+  document.getElementById('enrichMenu').style.display = 'none';
+  _setItemRunning('dotCountries', 'itemCountries', true);
   const res = await fetch('/api/fetch-artist-countries', { method: 'POST' }).then(r => r.json());
   if (!res.ok) {
     alert(res.error || 'Could not start fetch.');
-    btn.disabled = false;
+    _setItemRunning('dotCountries', 'itemCountries', false);
     return;
   }
-  btn.classList.add('syncing');
   document.getElementById('syncProgress').classList.add('visible');
   _countryPoll = setInterval(pollFetchCountries, 1500);
 }
 
 async function pollFetchCountries() {
   const s   = await fetch('/api/fetch-artist-countries/status').then(r => r.json());
-  const btn = document.getElementById('btnCountries');
   const bar = document.getElementById('syncBar');
   const msg = document.getElementById('syncMsg');
 
@@ -1003,16 +1085,14 @@ async function pollFetchCountries() {
   if (!s.running) {
     clearInterval(_countryPoll);
     _countryPoll = null;
-    btn.classList.remove('syncing');
-    btn.disabled = false;
+    _setItemRunning('dotCountries', 'itemCountries', false);
     if (s.error) {
       msg.textContent = 'Error: ' + s.error;
     } else {
-      btn.classList.add('done');
+      _setItemDone('dotCountries');
       bar.style.width = '100%';
       setTimeout(() => {
         loadWorldMap();
-        btn.classList.remove('done');
         document.getElementById('syncProgress').classList.remove('visible');
         bar.style.width = '0%';
       }, 2500);
@@ -1024,22 +1104,20 @@ async function pollFetchCountries() {
 let _relPoll = null;
 
 async function startFetchReleases() {
-  const btn = document.getElementById('btnFetchReleases');
-  btn.disabled = true;
+  document.getElementById('enrichMenu').style.display = 'none';
+  _setItemRunning('dotReleases', 'itemReleases', true);
   const res = await fetch('/api/fetch-releases-bulk', { method: 'POST' }).then(r => r.json());
   if (!res.ok) {
     alert(res.error || 'Could not start fetch.');
-    btn.disabled = false;
+    _setItemRunning('dotReleases', 'itemReleases', false);
     return;
   }
-  btn.classList.add('syncing');
   document.getElementById('syncProgress').classList.add('visible');
   _relPoll = setInterval(pollFetchReleases, 1500);
 }
 
 async function pollFetchReleases() {
   const s   = await fetch('/api/fetch-releases-bulk/status').then(r => r.json());
-  const btn = document.getElementById('btnFetchReleases');
   const bar = document.getElementById('syncBar');
   const msg = document.getElementById('syncMsg');
 
@@ -1049,17 +1127,15 @@ async function pollFetchReleases() {
   if (!s.running) {
     clearInterval(_relPoll);
     _relPoll = null;
-    btn.classList.remove('syncing');
-    btn.disabled = false;
+    _setItemRunning('dotReleases', 'itemReleases', false);
     if (s.error) {
       msg.textContent = 'Error: ' + s.error;
     } else {
-      btn.classList.add('done');
+      _setItemDone('dotReleases');
       bar.style.width = '100%';
       setTimeout(() => {
         eraLoaded = false;
         loadEraProfile();
-        btn.classList.remove('done');
         document.getElementById('syncProgress').classList.remove('visible');
         bar.style.width = '0%';
       }, 2500);
@@ -1067,26 +1143,24 @@ async function pollFetchReleases() {
   }
 }
 
-// ── fix artist names button ───────────────────────────────────────────────
+// ── fix artist names ──────────────────────────────────────────────────────
 let _correctPoll = null;
 
 async function startCorrect() {
-  const btn = document.getElementById('btnCorrect');
-  btn.disabled = true;
+  document.getElementById('enrichMenu').style.display = 'none';
+  _setItemRunning('dotCorrect', 'itemCorrect', true);
   const res = await fetch('/api/correct-artists', { method: 'POST' }).then(r => r.json());
   if (!res.ok) {
     alert(res.error || 'Could not start correction.');
-    btn.disabled = false;
+    _setItemRunning('dotCorrect', 'itemCorrect', false);
     return;
   }
-  btn.classList.add('syncing');
   document.getElementById('syncProgress').classList.add('visible');
   _correctPoll = setInterval(pollCorrect, 1200);
 }
 
 async function pollCorrect() {
   const s   = await fetch('/api/correct-artists/status').then(r => r.json());
-  const btn = document.getElementById('btnCorrect');
   const bar = document.getElementById('syncBar');
   const msg = document.getElementById('syncMsg');
 
@@ -1096,17 +1170,15 @@ async function pollCorrect() {
   if (!s.running) {
     clearInterval(_correctPoll);
     _correctPoll = null;
-    btn.classList.remove('syncing');
-    btn.disabled = false;
+    _setItemRunning('dotCorrect', 'itemCorrect', false);
     if (s.error) {
       msg.textContent = 'Error: ' + s.error;
     } else {
-      btn.classList.add('done');
+      _setItemDone('dotCorrect');
       bar.style.width = '100%';
       setTimeout(() => {
         overviewLoaded = false;
         loadOverview();
-        btn.classList.remove('done');
         document.getElementById('syncProgress').classList.remove('visible');
         bar.style.width = '0%';
       }, 2500);

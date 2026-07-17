@@ -351,6 +351,16 @@ def api_artist_world_map():
     return jsonify(db.artist_world_map())
 
 
+@app.route("/api/enrichment-status")
+def api_enrichment_status():
+    conn = db.get_conn()
+    correct  = conn.execute("SELECT COUNT(*) FROM checked_artists").fetchone()[0] > 0
+    releases = conn.execute("SELECT COUNT(*) FROM album_releases WHERE release_year IS NOT NULL").fetchone()[0] > 0
+    countries = conn.execute("SELECT COUNT(*) FROM artist_countries").fetchone()[0] > 0
+    conn.close()
+    return jsonify({"correct": correct, "releases": releases, "countries": countries})
+
+
 @app.route("/api/top-by-decade")
 def api_top_by_decade():
     decade = int(request.args.get("decade", 1990))
