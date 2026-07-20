@@ -43,6 +43,11 @@
   .enrich-item:last-child { border-bottom: none; }
   .enrich-item:hover { background: var(--bg3); }
   .enrich-item.is-disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+  .enrich-run-all { display:flex; align-items:center; gap:14px; padding:14px 16px; cursor:pointer;
+    background:var(--bg3); transition:background 0.12s; }
+  .enrich-run-all:hover { background:#252545; }
+  .enrich-run-all.is-disabled { opacity:0.45; cursor:not-allowed; pointer-events:none; }
+  .enrich-sep { height:1px; background:var(--border); }
   .item-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background 0.2s; }
   .item-dot.done { background: #4caf50; }
   .item-dot.running { background: var(--acc2); animation: pulse 1s infinite; }
@@ -187,6 +192,14 @@
         <span class="dot" id="enrichDot"></span> Enrich ▾
       </button>
       <div class="enrich-menu" id="enrichMenu">
+        <div class="enrich-run-all" id="btnRunAll" onclick="runAllEnrichments()">
+          <span style="font-size:1rem">▶</span>
+          <div>
+            <div style="font-size:.875rem; font-weight:600; color:var(--text)">Run All</div>
+            <div style="font-size:.72rem; color:var(--muted); margin-top:1px">Run all steps in sequence, skip completed</div>
+          </div>
+        </div>
+        <div class="enrich-sep"></div>
         <div class="enrich-item" id="itemCorrect" onclick="startCorrect()">
           <span class="item-dot" id="dotCorrect"></span>
           <div>
@@ -1042,6 +1055,75 @@ document.addEventListener('click', e => {
   const link = e.target.closest('.artist-link');
   if (link) openArtist(link.dataset.artist);
 });
+
+// ── run all enrichments ───────────────────────────────────────────────────
+async function _startAndAwait(postUrl, statusUrl, dotId, itemId) {
+  if (document.getElementById(dotId).classList.contains('done')) return true;
+
+  _setItemRunning(dotId, itemId, true);
+  const res = await fetch(postUrl, { method: 'POST' }).then(r => r.json());
+  if (!res.ok) {
+    // already running (started externally) — just wait for it to finish
+    if (!res.error?.includes('already running')) {
+      _setItemRunning(dotId, itemId, false);
+      return false;
+    }
+  }
+
+  while (true) {
+    await new Promise(r => setTimeout(r, 1500));
+    const s = await fetch(statusUrl).then(r => r.json());
+    const bar = document.getElementById('syncBar');
+    const msg = document.getElementById('syncMsg');
+    msg.textContent = s.message || '';
+    bar.style.width  = s.total > 0 ? Math.round(s.done / s.total * 100) + '%'
+                                   : (s.running ? '10%' : '100%');
+    if (!s.running) {
+      _setItemRunning(dotId, itemId, false);
+      if (s.error) { msg.textContent = 'Error: ' + s.error; return false; }
+      _setItemDone(dotId);
+      return true;
+    }
+  }
+}
+
+async function runAllEnrichments() {
+  document.getElementById('enrichMenu').style.display = 'none';
+  document.getElementById('btnRunAll').classList.add('is-disabled');
+  document.getElementById('syncProgress').classList.add('visible');
+
+  const steps = [
+    ['/api/correct-artists',        '/api/correct-artists/status',        'dotCorrect',     'itemCorrect',    'Fix Artist Names'],
+    ['/api/fetch-releases-bulk',    '/api/fetch-releases-bulk/status',    'dotReleases',    'itemReleases',   'Fetch Release Years'],
+    ['/api/fetch-artist-stats',     '/api/fetch-artist-stats/status',     'dotArtistStats', 'itemArtistStats','Fetch Artist Popularity'],
+    ['/api/fetch-artist-countries', '/api/fetch-artist-countries/status', 'dotCountries',   'itemCountries',  'Map Artist Countries'],
+  ];
+
+  const msg = document.getElementById('syncMsg');
+  const bar = document.getElementById('syncBar');
+  let anyRan = false;
+
+  for (const [post, status, dot, item, label] of steps) {
+    if (document.getElementById(dot).classList.contains('done')) {
+      msg.textContent = `${label} — already done, skipping…`;
+      continue;
+    }
+    anyRan = true;
+    const ok = await _startAndAwait(post, status, dot, item);
+    if (!ok) break;
+  }
+
+  document.getElementById('btnRunAll').classList.remove('is-disabled');
+  bar.style.width = '100%';
+  msg.textContent = anyRan ? 'All done!' : 'All enrichments are already up to date ✓';
+  setTimeout(() => {
+    document.getElementById('syncProgress').classList.remove('visible');
+    bar.style.width = '0%';
+    msg.textContent = '';
+    loadHiddenGems();
+    loadWorldMap();
+  }, 3000);
+}
 
 // ── enrich dropdown ───────────────────────────────────────────────────────
 function toggleEnrichMenu(e) {
