@@ -42,6 +42,12 @@ def init_db():
             country_code TEXT,
             fetched_at   INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS artist_global_stats (
+            artist      TEXT PRIMARY KEY,
+            listeners   INTEGER,
+            playcount   INTEGER,
+            fetched_at  INTEGER NOT NULL
+        );
     """)
     conn.commit()
     conn.close()
@@ -625,6 +631,45 @@ def artist_world_map():
         if len(result[cc]["artists"]) < 5:
             result[cc]["artists"].append({"artist": row["artist"], "plays": row["plays"]})
     return result
+
+
+def hidden_gems(max_listeners=200_000, min_plays=15, limit=10):
+    """Artists the user loves that are globally obscure (low Last.fm listener count)."""
+    import math
+    import time as _time
+    cutoff_90 = int(_time.time()) - 90 * 86400
+    conn = get_conn()
+    rows = conn.execute("""
+        WITH my_stats AS (
+            SELECT
+                artist,
+                COUNT(*)                                                    AS my_plays,
+                COUNT(DISTINCT track)                                       AS unique_tracks,
+                COUNT(DISTINCT strftime('%Y-%m', ts, 'unixepoch'))          AS active_months,
+                SUM(CASE WHEN ts >= ? THEN 1 ELSE 0 END)                   AS recent_plays
+            FROM scrobbles
+            GROUP BY artist
+            HAVING COUNT(*) >= ?
+        )
+        SELECT m.artist, m.my_plays, m.unique_tracks, m.active_months,
+               m.recent_plays, g.listeners
+        FROM my_stats m
+        JOIN artist_global_stats g ON m.artist = g.artist
+        WHERE g.listeners > 0
+          AND g.listeners < ?
+          AND m.unique_tracks >= 3
+    """, (cutoff_90, min_plays, max_listeners)).fetchall()
+    conn.close()
+
+    results = []
+    for r in rows:
+        score = (
+            r["my_plays"] * r["active_months"] * (1.0 + r["recent_plays"] * 0.2)
+        ) / math.log10(r["listeners"] + 10)
+        results.append({**dict(r), "gem_score": round(score, 2)})
+
+    results.sort(key=lambda x: x["gem_score"], reverse=True)
+    return results[:limit]
 
 
 def _ts_filter(ts_from, ts_to):

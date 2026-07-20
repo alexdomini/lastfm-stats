@@ -153,6 +153,17 @@
   .loading-dots::after { content:'...'; animation:dots 1.2s infinite; }
   @keyframes dots { 0%{content:'.'} 40%{content:'..'} 80%{content:'...'} }
 
+  /* ── hidden gems ── */
+  .gem-row { display:flex; align-items:center; gap:14px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .gem-row:last-child { border-bottom:none; }
+  .gem-rank { width:22px; text-align:right; color:var(--muted); font-size:.8rem; flex-shrink:0; }
+  .gem-name { flex:1; font-size:.875rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gem-listeners { font-size:.72rem; color:var(--muted); white-space:nowrap; }
+  .gem-plays { font-size:.8rem; color:var(--acc2); white-space:nowrap; font-weight:600; }
+  .gem-bar-wrap { width:80px; flex-shrink:0; }
+  .gem-bar { height:5px; border-radius:3px; background:linear-gradient(90deg,var(--acc),var(--acc2)); }
+  .gems-empty { color:var(--muted); font-size:.875rem; text-align:center; padding:20px 0; }
+
   footer { border-top: 1px solid var(--border); padding: 16px 28px; display: flex; justify-content: center; }
   .lfm-badge { display: inline-flex; align-items: center; gap: 0; border-radius: 5px; overflow: hidden; text-decoration: none; font-size: 0.75rem; font-weight: 600; line-height: 1; }
   .lfm-badge .powered { background: #222; color: #aaa; padding: 5px 8px; }
@@ -195,6 +206,13 @@
           <div>
             <div class="item-title">Map Artist Countries</div>
             <div class="item-desc">Locate artists on the world map using MusicBrainz</div>
+          </div>
+        </div>
+        <div class="enrich-item" id="itemArtistStats" onclick="startFetchArtistStats()">
+          <span class="item-dot" id="dotArtistStats"></span>
+          <div>
+            <div class="item-title">Fetch Artist Popularity</div>
+            <div class="item-desc">Get global listener counts from Last.fm — powers Hidden Gems</div>
           </div>
         </div>
       </div>
@@ -247,6 +265,21 @@
       <h2>Top 10 tracks (all time)</h2>
       <ul class="rank-list" id="listTopTracksOv"></ul>
     </div>
+  </div>
+
+  <!-- HIDDEN GEMS -->
+  <div class="card" id="gemsCard">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap">
+      <h2 style="margin:0">Hidden Gems</h2>
+      <span style="font-size:0.75rem; color:var(--muted); flex:1">artists you love that the world hasn't discovered yet</span>
+      <select id="gemsThreshold" onchange="loadHiddenGems()" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:6px;font-size:0.8rem;cursor:pointer">
+        <option value="3000">Very obscure &lt; 3K</option>
+        <option value="20000">Underground &lt; 20K</option>
+        <option value="100000">Indie &lt; 100K</option>
+        <option value="200000" selected>All indie &lt; 200K</option>
+      </select>
+    </div>
+    <div id="gemsList"></div>
   </div>
   {% endif %}
 </div>
@@ -1051,11 +1084,87 @@ function _updateEnrichDot() {
 async function loadEnrichStatus() {
   try {
     const s = await fetch('/api/enrichment-status').then(r => r.json());
-    if (s.correct)   document.getElementById('dotCorrect').classList.add('done');
-    if (s.releases)  document.getElementById('dotReleases').classList.add('done');
-    if (s.countries) document.getElementById('dotCountries').classList.add('done');
+    if (s.correct)      document.getElementById('dotCorrect').classList.add('done');
+    if (s.releases)     document.getElementById('dotReleases').classList.add('done');
+    if (s.countries)    document.getElementById('dotCountries').classList.add('done');
+    if (s.artist_stats) document.getElementById('dotArtistStats').classList.add('done');
     _updateEnrichDot();
+    if (s.artist_stats) loadHiddenGems();
   } catch(e) {}
+}
+
+// ── hidden gems ───────────────────────────────────────────────────────────
+function _fmtListeners(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M listeners';
+  if (n >= 1_000)     return Math.round(n / 1_000) + 'K listeners';
+  return n + ' listeners';
+}
+
+async function loadHiddenGems() {
+  const el = document.getElementById('gemsList');
+  if (!el) return;
+  el.innerHTML = '<div class="gems-empty loading-dots">Loading</div>';
+  const threshold = document.getElementById('gemsThreshold')?.value || 200000;
+  try {
+    const gems = await fetch(`/api/hidden-gems?max_listeners=${threshold}`).then(r => r.json());
+    if (!gems.length) {
+      el.innerHTML = '<div class="gems-empty">No hidden gems found yet — try lowering the popularity threshold or fetching more artist stats.</div>';
+      return;
+    }
+    const maxPlays = gems[0].my_plays;
+    el.innerHTML = gems.map((g, i) => `
+      <div class="gem-row">
+        <span class="gem-rank">${i + 1}</span>
+        <span class="gem-name artist-link" data-artist="${g.artist}">${g.artist}</span>
+        <span class="gem-listeners">${_fmtListeners(g.listeners)}</span>
+        <div class="gem-bar-wrap"><div class="gem-bar" style="width:${Math.round(g.my_plays / maxPlays * 100)}%"></div></div>
+        <span class="gem-plays">${g.my_plays.toLocaleString()} plays</span>
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="gems-empty">Could not load hidden gems.</div>';
+  }
+}
+
+// ── fetch artist popularity (Last.fm global stats) ────────────────────────
+let _artistStatsPoll = null;
+
+async function startFetchArtistStats() {
+  document.getElementById('enrichMenu').style.display = 'none';
+  _setItemRunning('dotArtistStats', 'itemArtistStats', true);
+  const res = await fetch('/api/fetch-artist-stats', { method: 'POST' }).then(r => r.json());
+  if (!res.ok) {
+    alert(res.error || 'Could not start fetch.');
+    _setItemRunning('dotArtistStats', 'itemArtistStats', false);
+    return;
+  }
+  document.getElementById('syncProgress').classList.add('visible');
+  _artistStatsPoll = setInterval(pollFetchArtistStats, 1500);
+}
+
+async function pollFetchArtistStats() {
+  const s   = await fetch('/api/fetch-artist-stats/status').then(r => r.json());
+  const bar = document.getElementById('syncBar');
+  const msg = document.getElementById('syncMsg');
+
+  msg.textContent = s.message || '';
+  bar.style.width = s.total > 0 ? Math.round(s.done / s.total * 100) + '%' : (s.running ? '5%' : '100%');
+
+  if (!s.running) {
+    clearInterval(_artistStatsPoll);
+    _artistStatsPoll = null;
+    _setItemRunning('dotArtistStats', 'itemArtistStats', false);
+    if (s.error) {
+      msg.textContent = 'Error: ' + s.error;
+    } else {
+      _setItemDone('dotArtistStats');
+      bar.style.width = '100%';
+      setTimeout(() => {
+        loadHiddenGems();
+        document.getElementById('syncProgress').classList.remove('visible');
+        bar.style.width = '0%';
+      }, 2500);
+    }
+  }
 }
 
 // ── fetch artist countries ────────────────────────────────────────────────

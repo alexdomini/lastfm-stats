@@ -42,6 +42,14 @@ _country = {
     "message": "",
     "error": "",
 }
+_artist_stats = {
+    "running": False,
+    "done": 0,
+    "total": 0,
+    "found": 0,
+    "message": "",
+    "error": "",
+}
 _sync_lock = threading.Lock()
 
 
@@ -351,14 +359,55 @@ def api_artist_world_map():
     return jsonify(db.artist_world_map())
 
 
+@app.route("/api/fetch-artist-stats", methods=["POST"])
+def api_fetch_artist_stats_start():
+    with _sync_lock:
+        if any([_artist_stats["running"], _country["running"],
+                _sync["running"], _correct["running"], _bulk_rel["running"]]):
+            return jsonify({"ok": False, "error": "An operation is already running."})
+        _artist_stats.update(running=True, done=0, total=0, found=0,
+                             message="Loading artists…", error="")
+
+    def _run():
+        import fetch_lastfm_artist_stats
+        try:
+            def on_progress(done, total, found, message):
+                with _sync_lock:
+                    _artist_stats.update(done=done, total=total, found=found, message=message)
+            fetch_lastfm_artist_stats.run(on_progress=on_progress)
+        except Exception as e:
+            with _sync_lock:
+                _artist_stats["error"] = str(e)
+        finally:
+            with _sync_lock:
+                _artist_stats["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/fetch-artist-stats/status")
+def api_fetch_artist_stats_status():
+    with _sync_lock:
+        return jsonify(dict(_artist_stats))
+
+
+@app.route("/api/hidden-gems")
+def api_hidden_gems():
+    max_listeners = int(request.args.get("max_listeners", 200_000))
+    return jsonify(db.hidden_gems(max_listeners=max_listeners))
+
+
 @app.route("/api/enrichment-status")
 def api_enrichment_status():
     conn = db.get_conn()
-    correct  = conn.execute("SELECT COUNT(*) FROM checked_artists").fetchone()[0] > 0
-    releases = conn.execute("SELECT COUNT(*) FROM album_releases WHERE release_year IS NOT NULL").fetchone()[0] > 0
-    countries = conn.execute("SELECT COUNT(*) FROM artist_countries").fetchone()[0] > 0
+    correct      = conn.execute("SELECT COUNT(*) FROM checked_artists").fetchone()[0] > 0
+    releases     = conn.execute("SELECT COUNT(*) FROM album_releases WHERE release_year IS NOT NULL").fetchone()[0] > 0
+    countries    = conn.execute("SELECT COUNT(*) FROM artist_countries").fetchone()[0] > 0
+    artist_stats = conn.execute("SELECT COUNT(*) FROM artist_global_stats").fetchone()[0] > 0
     conn.close()
-    return jsonify({"correct": correct, "releases": releases, "countries": countries})
+    return jsonify({"correct": correct, "releases": releases,
+                    "countries": countries, "artist_stats": artist_stats})
 
 
 @app.route("/api/top-by-decade")
