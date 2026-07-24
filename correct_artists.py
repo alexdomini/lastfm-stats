@@ -42,6 +42,17 @@ def _get_correction(artist_name):
 
 def run(on_progress=None):
     db.init_db()
+
+    # Re-apply all previously discovered corrections to catch new syncs
+    conn = db.get_conn()
+    conn.execute("""
+        UPDATE scrobbles
+        SET artist = (SELECT ac.right FROM artist_corrections ac WHERE ac.wrong = scrobbles.artist)
+        WHERE artist IN (SELECT wrong FROM artist_corrections)
+    """)
+    conn.commit()
+    conn.close()
+
     conn = db.get_conn()
     artists = [r[0] for r in conn.execute("""
         SELECT DISTINCT s.artist FROM scrobbles s
@@ -84,6 +95,12 @@ def run(on_progress=None):
             "UPDATE scrobbles SET artist = ? WHERE artist = ?",
             (right, wrong)
         )
+        conn.execute(
+            "INSERT OR REPLACE INTO artist_corrections(wrong, right, corrected_at) VALUES(?, ?, ?)",
+            (wrong, right, now)
+        )
+        # Remove "wrong" from checked_artists so future syncs can re-apply the correction
+        conn.execute("DELETE FROM checked_artists WHERE artist = ?", (wrong,))
         conn.execute(
             "INSERT OR IGNORE INTO checked_artists(artist, checked_at) VALUES(?, ?)",
             (right, now)

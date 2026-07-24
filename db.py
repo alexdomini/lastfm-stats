@@ -48,6 +48,11 @@ def init_db():
             playcount   INTEGER,
             fetched_at  INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS artist_corrections (
+            wrong        TEXT PRIMARY KEY,
+            right        TEXT NOT NULL,
+            corrected_at INTEGER NOT NULL
+        );
     """)
     conn.commit()
     conn.close()
