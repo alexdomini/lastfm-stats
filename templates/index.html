@@ -146,6 +146,9 @@
   .modal-section h3 { font-size:0.85rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px; }
   .artist-link { color:inherit; text-decoration:none; cursor:pointer; border-bottom:1px dashed var(--muted); }
   .artist-link:hover { color:var(--acc); border-bottom-color:var(--acc); }
+  .album-link { color:inherit; text-decoration:none; cursor:pointer; border-bottom:1px dashed var(--muted); }
+  .album-link:hover { color:var(--acc2); border-bottom-color:var(--acc2); }
+  #albumModal { z-index: 110; }
   .album-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:0.875rem; }
   .album-row:last-child { border:none; }
   .album-rank { width:20px; text-align:right; color:var(--muted); font-size:.8rem; flex-shrink:0; }
@@ -512,6 +515,26 @@
   </div>
 </div>
 
+<!-- ALBUM MODAL -->
+<div class="modal-backdrop" id="albumModal" onclick="closeAlbumModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0">
+        <h2 id="modalAlbumTitle" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></h2>
+        <div id="modalAlbumArtistName" style="font-size:.85rem;color:var(--muted);margin-top:3px"></div>
+      </div>
+      <button class="modal-close" onclick="closeAlbumModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-stats" id="albumModalStats"></div>
+      <div class="modal-section">
+        <h3>Tracks by play count</h3>
+        <ul class="rank-list" id="albumModalTracks"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
 <footer>
   <a class="lfm-badge" href="https://www.last.fm" target="_blank" rel="noopener">
     <span class="powered">Powered by</span>
@@ -564,7 +587,7 @@ function rankListDeep(ulId, items, artistMode = false) {
   if (!items.length) { ul.innerHTML = '<li class="empty">No data</li>'; return; }
   const max = items[0].score;
   ul.innerHTML = items.map((it, i) => {
-    const name = artistMode ? artistLink(it.artist) : esc(it.album);
+    const name = artistMode ? artistLink(it.artist) : albumLink(it.artist, it.album);
     const sub  = artistMode
       ? `${it.unique_tracks} tracks &middot; ${it.total_plays.toLocaleString()} plays`
       : `${artistLink(it.artist)} &middot; ${it.unique_tracks} tracks &middot; ${it.total_plays.toLocaleString()} plays`;
@@ -581,6 +604,10 @@ function artistLink(name) {
   return `<a class="artist-link" data-artist="${esc(name)}">${esc(name)}</a>`;
 }
 
+function albumLink(artist, album) {
+  return `<a class="album-link" data-artist="${esc(artist)}" data-album="${esc(album)}">${esc(album)}</a>`;
+}
+
 function rankList(ulId, items, nameFn, subFn, countKey = 'n') {
   const ul = document.getElementById(ulId);
   if (!ul) return;
@@ -588,7 +615,10 @@ function rankList(ulId, items, nameFn, subFn, countKey = 'n') {
   const max = items[0][countKey];
   ul.innerHTML = items.map((it, i) => {
     const isArtistRow = !subFn && it.artist !== undefined;
-    const nameHtml = isArtistRow ? artistLink(nameFn(it)) : esc(nameFn(it));
+    const isAlbumRow  = subFn && it.album !== undefined && it.artist !== undefined;
+    const nameHtml = isArtistRow ? artistLink(nameFn(it))
+                   : isAlbumRow  ? albumLink(it.artist, it.album)
+                   : esc(nameFn(it));
     const subHtml  = subFn ? `<br><span class="rank-sub">${artistLink(subFn(it))}</span>` : '';
     return `<li>
       <span class="rank-num">${i+1}</span>
@@ -1025,6 +1055,7 @@ function renderArtistAlbums(albums) {
   const maxScore = hasSmartScore
     ? Math.max(...albums.filter(a => a.smart_score != null).map(a => a.smart_score))
     : Math.max(...albums.map(a => a.geo_mean));
+  const artistName = document.getElementById('modalArtistName').textContent;
 
   el.innerHTML = albums.map((a, i) => {
     const score      = a.smart_score != null ? a.smart_score : a.geo_mean;
@@ -1034,7 +1065,7 @@ function renderArtistAlbums(albums) {
     return `<div class="album-row">
       <span class="album-rank">${i+1}</span>
       <span class="album-info">
-        <div class="album-name">${esc(a.album)}</div>
+        <div class="album-name">${albumLink(artistName, a.album)}</div>
         <div class="album-meta">${a.unique_tracks} tracks &middot; ${a.total_plays.toLocaleString()} plays &middot; ${yearStr}</div>
         <div style="margin-top:4px"><div style="height:4px;border-radius:2px;background:var(--acc2);width:${pct}%"></div></div>
       </span>
@@ -1049,14 +1080,55 @@ function closeArtistModal(e) {
   if (e && e.target !== document.getElementById('artistModal')) return;
   document.getElementById('artistModal').classList.remove('open');
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('artistModal').classList.remove('open'); });
 
-document.addEventListener('click', e => {
-  const link = e.target.closest('.artist-link');
-  if (link) openArtist(link.dataset.artist);
+// ── album modal ───────────────────────────────────────────────────────────
+async function openAlbum(artist, album) {
+  const modal = document.getElementById('albumModal');
+  modal.classList.add('open');
+  document.getElementById('modalAlbumTitle').textContent = album;
+  document.getElementById('modalAlbumArtistName').textContent = artist;
+  document.getElementById('albumModalStats').innerHTML =
+    '<div style="color:var(--muted);font-size:.85rem" class="loading-dots">Loading</div>';
+  document.getElementById('albumModalTracks').innerHTML = '';
+
+  const p = await fetch(
+    `/api/album?artist=${encodeURIComponent(artist)}&album=${encodeURIComponent(album)}`
+  ).then(r => r.json());
+
+  const firstDate = p.first_ts
+    ? new Date(p.first_ts * 1000).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'})
+    : '—';
+  document.getElementById('albumModalStats').innerHTML = `
+    <div class="modal-stat"><div class="v">${p.total_plays.toLocaleString()}</div><div class="l">Plays</div></div>
+    <div class="modal-stat"><div class="v">${p.unique_tracks.toLocaleString()}</div><div class="l">Tracks</div></div>
+    <div class="modal-stat"><div class="v">${p.release_year || '—'}</div><div class="l">Release Year</div></div>
+    <div class="modal-stat"><div class="v" style="font-size:.85rem">${firstDate}</div><div class="l">First Scrobbled</div></div>
+  `;
+  rankList('albumModalTracks', p.tracks, r => r.track, null);
+}
+
+function closeAlbumModal(e) {
+  if (e && e.target !== document.getElementById('albumModal')) return;
+  document.getElementById('albumModal').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('albumModal').classList.contains('open')) {
+    document.getElementById('albumModal').classList.remove('open');
+  } else {
+    document.getElementById('artistModal').classList.remove('open');
+  }
 });
 
-// ── run all enrichments ───────────────────────────────────────────────────
+document.addEventListener('click', e => {
+  const artistLinkEl = e.target.closest('.artist-link');
+  if (artistLinkEl) { openArtist(artistLinkEl.dataset.artist); return; }
+  const albumLinkEl = e.target.closest('.album-link');
+  if (albumLinkEl) openAlbum(albumLinkEl.dataset.artist, albumLinkEl.dataset.album);
+});
+
+// ── run all enrichments ──────────────────────────────────────────────────
 async function _startAndAwait(postUrl, statusUrl, dotId, itemId) {
   if (document.getElementById(dotId).classList.contains('done')) return true;
 

@@ -677,6 +677,40 @@ def hidden_gems(max_listeners=200_000, min_plays=15, limit=10):
     return results[:limit]
 
 
+def get_album_profile(artist, album):
+    """Full profile data for the album detail modal."""
+    conn = get_conn()
+
+    row = conn.execute("""
+        SELECT COUNT(*) AS total_plays,
+               COUNT(DISTINCT track) AS unique_tracks,
+               MIN(ts) AS first_ts
+        FROM scrobbles WHERE artist = ? AND album = ?
+    """, (artist, album)).fetchone()
+
+    tracks = [dict(r) for r in conn.execute("""
+        SELECT track, COUNT(*) AS n
+        FROM scrobbles WHERE artist = ? AND album = ?
+        GROUP BY track ORDER BY n DESC
+    """, (artist, album)).fetchall()]
+
+    release = conn.execute(
+        "SELECT release_year FROM album_releases WHERE artist = ? AND album = ?",
+        (artist, album)
+    ).fetchone()
+
+    conn.close()
+    return {
+        "artist":        artist,
+        "album":         album,
+        "total_plays":   row["total_plays"],
+        "unique_tracks": row["unique_tracks"],
+        "first_ts":      row["first_ts"],
+        "release_year":  release["release_year"] if release else None,
+        "tracks":        tracks,
+    }
+
+
 def _ts_filter(ts_from, ts_to):
     clauses, params = [], []
     if ts_from:

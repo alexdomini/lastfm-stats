@@ -239,6 +239,15 @@ def api_trending():
     return jsonify(data)
 
 
+@app.route("/api/album")
+def api_album():
+    artist = request.args.get("artist", "").strip()
+    album  = request.args.get("album",  "").strip()
+    if not artist or not album:
+        return jsonify({"error": "artist and album required"}), 400
+    return jsonify(db.get_album_profile(artist, album))
+
+
 @app.route("/api/artist")
 def api_artist():
     name = request.args.get("name", "").strip()
