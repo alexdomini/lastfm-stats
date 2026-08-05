@@ -617,11 +617,12 @@ function rankList(ulId, items, nameFn, subFn, countKey = 'n') {
   const max = items[0][countKey];
   ul.innerHTML = items.map((it, i) => {
     const isArtistRow = !subFn && it.artist !== undefined;
+    const isOriginRow = it.career_start !== undefined;
     const isAlbumRow  = subFn && it.album !== undefined && it.artist !== undefined;
-    const nameHtml = isArtistRow ? artistLink(nameFn(it))
+    const nameHtml = (isArtistRow || isOriginRow) ? artistLink(nameFn(it))
                    : isAlbumRow  ? albumLink(it.artist, it.album)
                    : esc(nameFn(it));
-    const subHtml  = subFn ? `<br><span class="rank-sub">${artistLink(subFn(it))}</span>` : '';
+    const subHtml  = subFn ? `<br><span class="rank-sub">${isOriginRow ? esc(subFn(it)) : artistLink(subFn(it))}</span>` : '';
     return `<li>
       <span class="rank-num">${i+1}</span>
       <span class="rank-name">${nameHtml}${subHtml}</span>
