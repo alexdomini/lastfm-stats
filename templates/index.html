@@ -451,10 +451,12 @@
         <button class="decade-tab active" data-tab="artists" onclick="showDecadeTab('artists',this)">Artists</button>
         <button class="decade-tab" data-tab="albums" onclick="showDecadeTab('albums',this)">Albums</button>
         <button class="decade-tab" data-tab="tracks" onclick="showDecadeTab('tracks',this)">Tracks</button>
+        <button class="decade-tab" data-tab="origins" onclick="showDecadeTab('origins',this)">Origins</button>
       </div>
       <ul class="rank-list" id="decadeArtists"></ul>
       <ul class="rank-list" id="decadeAlbums" style="display:none"></ul>
       <ul class="rank-list" id="decadeTracks" style="display:none"></ul>
+      <ul class="rank-list" id="decadeOrigins" style="display:none"></ul>
       <p id="decadeCoverage" style="font-size:0.75rem;color:var(--muted);margin-top:8px;text-align:right"></p>
     </div>
   </div>
@@ -824,7 +826,7 @@ async function loadDecade(decade) {
   });
 
   const loading = '<li style="color:var(--muted);padding:8px 0;font-size:0.85rem">Loading…</li>';
-  ['decadeArtists','decadeAlbums','decadeTracks'].forEach(id =>
+  ['decadeArtists','decadeAlbums','decadeTracks','decadeOrigins'].forEach(id =>
     document.getElementById(id).innerHTML = loading
   );
   showDecadeTab('artists');
@@ -846,13 +848,16 @@ async function loadDecade(decade) {
   if (data.tracks.length)  rankList('decadeTracks', data.tracks, r => r.track, r => r.artist);
   else document.getElementById('decadeTracks').innerHTML = noData;
 
+  if (data.origins && data.origins.length) rankList('decadeOrigins', data.origins, r => r.artist, r => `career started ${r.career_start}`);
+  else document.getElementById('decadeOrigins').innerHTML = noData;
+
   const pct = data.total > 0 ? ((data.classified / data.total) * 100).toFixed(1) : 0;
   document.getElementById('decadeCoverage').textContent =
     `Based on ${pct}% of scrobbles with release year data`;
 }
 
 function showDecadeTab(tab, btn) {
-  ['artists', 'albums', 'tracks'].forEach(t => {
+  ['artists', 'albums', 'tracks', 'origins'].forEach(t => {
     document.getElementById('decade' + t.charAt(0).toUpperCase() + t.slice(1)).style.display =
       t === tab ? 'block' : 'none';
   });

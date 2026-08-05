@@ -516,6 +516,21 @@ def top_by_decade(decade, limit=10):
         ORDER BY n DESC LIMIT ?
     """, (decade_from, decade_to, limit)).fetchall()
 
+    origins = conn.execute("""
+        SELECT s.artist, COUNT(*) AS n, cr.career_start
+        FROM scrobbles s
+        JOIN (
+            SELECT artist, MIN(release_year) AS career_start
+            FROM album_releases
+            WHERE release_year IS NOT NULL
+            GROUP BY artist
+            HAVING MIN(release_year) BETWEEN ? AND ?
+        ) cr ON s.artist = cr.artist
+        GROUP BY s.artist
+        ORDER BY n DESC
+        LIMIT ?
+    """, (decade_from, decade_to, limit)).fetchall()
+
     classified = conn.execute("""
         SELECT COUNT(*) FROM scrobbles s
         JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
@@ -527,9 +542,10 @@ def top_by_decade(decade, limit=10):
 
     return {
         "decade": decade,
-        "tracks":  [dict(r) for r in tracks],
-        "artists": [dict(r) for r in artists],
-        "albums":  [dict(r) for r in albums],
+        "tracks":   [dict(r) for r in tracks],
+        "artists":  [dict(r) for r in artists],
+        "albums":   [dict(r) for r in albums],
+        "origins":  [dict(r) for r in origins],
         "classified": classified,
         "total": total,
     }
