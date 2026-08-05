@@ -105,12 +105,16 @@ def run(on_progress=None):
     db.init_db()
     conn = db.get_conn()
 
+    # Skip albums with fewer than 5 plays: they're likely one-off misattributions
+    # or name-collision scrobbles and aren't worth enriching.
     pairs = conn.execute("""
-        SELECT DISTINCT s.artist, s.album
+        SELECT s.artist, s.album
         FROM scrobbles s
         LEFT JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
         WHERE s.album != ''
           AND ar.artist IS NULL
+        GROUP BY s.artist, s.album
+        HAVING COUNT(*) >= 5
         ORDER BY s.artist, s.album
     """).fetchall()
     conn.close()
