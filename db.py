@@ -516,22 +516,30 @@ def top_by_decade(decade, limit=10):
         ORDER BY n DESC LIMIT ?
     """, (decade_from, decade_to, limit)).fetchall()
 
-    # Require >=10 plays per album so one-off misattributed scrobbles (same
-    # artist name, different act) don't pull career_start back by decades.
+    # Career start = earliest year in the first decade where the artist has
+    # >=2 albums with known release years.  A single rogue album from a
+    # name-collision act fails this test; a band's genuine early catalog passes.
     origins = conn.execute("""
-        SELECT s.artist, COUNT(*) AS n, cr.career_start
-        FROM scrobbles s
-        JOIN (
-            SELECT ar.artist, MIN(ar.release_year) AS career_start
+        WITH decade_albums AS (
+            SELECT
+                ar.artist,
+                (ar.release_year / 10) * 10 AS decade_start,
+                MIN(ar.release_year)         AS min_year,
+                COUNT(DISTINCT ar.album)     AS n_albums
             FROM album_releases ar
             WHERE ar.release_year IS NOT NULL
-              AND (
-                  SELECT COUNT(*) FROM scrobbles s2
-                  WHERE s2.artist = ar.artist AND s2.album = ar.album
-              ) >= 10
-            GROUP BY ar.artist
-            HAVING MIN(ar.release_year) BETWEEN ? AND ?
-        ) cr ON s.artist = cr.artist
+            GROUP BY ar.artist, (ar.release_year / 10) * 10
+        ),
+        career_start AS (
+            SELECT artist, MIN(min_year) AS career_start
+            FROM decade_albums
+            WHERE n_albums >= 2
+            GROUP BY artist
+            HAVING MIN(min_year) BETWEEN ? AND ?
+        )
+        SELECT s.artist, COUNT(*) AS n, cs.career_start
+        FROM scrobbles s
+        JOIN career_start cs ON s.artist = cs.artist
         GROUP BY s.artist
         ORDER BY n DESC
         LIMIT ?
