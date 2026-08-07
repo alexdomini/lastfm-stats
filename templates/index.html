@@ -678,7 +678,7 @@ function enrichArtist(artist, btn) {
         sub.textContent = 'Couldn\'t find years — try contributing to MusicBrainz';
         sub.style.color = 'var(--muted)';
       }
-      if (currentDecade) setTimeout(() => loadDecade(currentDecade), 1500);
+      if (currentDecade) setTimeout(() => loadDecade(currentDecade, true), 1500);
     }
   };
   es.onerror = () => {
@@ -878,16 +878,19 @@ function buildDecadeButtons(distribution) {
   ).join('');
 }
 
-async function loadDecade(decade) {
+async function loadDecade(decade, keepTab = false) {
   document.querySelectorAll('.decade-btn-item').forEach(b => {
     b.classList.toggle('active', parseInt(b.dataset.decade) === decade);
   });
 
+  const activeTab = keepTab
+    ? (document.querySelector('.decade-tab.active')?.dataset.tab || 'artists')
+    : 'artists';
   const loading = '<li style="color:var(--muted);padding:8px 0;font-size:0.85rem">Loading…</li>';
   ['decadeArtists','decadeAlbums','decadeTracks','decadeOrigins'].forEach(id =>
     document.getElementById(id).innerHTML = loading
   );
-  showDecadeTab('artists');
+  showDecadeTab(activeTab);
   document.getElementById('decadeContent').style.display = 'block';
 
   currentDecade = decade;
