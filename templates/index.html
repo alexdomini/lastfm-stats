@@ -645,7 +645,7 @@ function renderOrigins(ulId, items) {
   ul.innerHTML = items.map((it, i) => `<li>
     <span class="rank-num">${i+1}</span>
     <span class="rank-name" style="white-space:normal">
-      ${artistLink(it.artist)}<button class="enrich-btn" title="Re-fetch release years for this artist" onclick="enrichArtist(${JSON.stringify(it.artist)},this)">↻</button>
+      ${artistLink(it.artist)}<button class="enrich-btn" title="Re-fetch release years for this artist" data-artist="${esc(it.artist)}" onclick="enrichArtist(this.dataset.artist,this)">↻</button>
       <br><span class="rank-sub origin-sub">career started ${it.career_start}</span>
     </span>
     <span class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(it.n/max*100)}%"></div></span>
