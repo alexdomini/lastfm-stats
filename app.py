@@ -2,7 +2,7 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from dotenv import load_dotenv
 import db
 
@@ -361,6 +361,48 @@ def api_fetch_artist_countries_start():
 def api_fetch_artist_countries_status():
     with _sync_lock:
         return jsonify(dict(_country))
+
+
+@app.route("/api/enrich-artist")
+def api_enrich_artist():
+    import json as _json, fetch_releases_bulk
+    artist = request.args.get("artist", "").strip()
+    if not artist:
+        return jsonify({"error": "artist required"}), 400
+
+    def generate():
+        conn = db.get_conn()
+        pairs = conn.execute("""
+            SELECT s.album, COUNT(*) AS plays
+            FROM scrobbles s
+            LEFT JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
+            WHERE s.artist = ? AND s.album != ''
+              AND (ar.artist IS NULL OR ar.release_year IS NULL)
+            GROUP BY s.album
+            ORDER BY plays DESC
+        """, (artist,)).fetchall()
+        conn.close()
+
+        total = len(pairs)
+        found = 0
+        yield f"data: {_json.dumps({'status': 'start', 'total': total})}\n\n"
+
+        for i, row in enumerate(pairs):
+            album = row["album"]
+            year, used_mb = fetch_releases_bulk._get_release_year(artist, album)
+            db.save_album_release(artist, album, year)
+            if year:
+                found += 1
+            yield f"data: {_json.dumps({'status': 'progress', 'done': i + 1, 'total': total, 'found': found, 'year': year})}\n\n"
+            time.sleep(0.22 + (0.8 if used_mb else 0))
+
+        yield f"data: {_json.dumps({'status': 'done', 'total': total, 'found': found})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.route("/api/artist-world-map")

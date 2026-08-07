@@ -112,6 +112,10 @@
   .rank-bar-wrap { width: 120px; flex-shrink: 0; }
   .rank-bar { height: 6px; border-radius: 3px; background: var(--acc); }
   .rank-count { width: 48px; text-align: right; color: var(--muted); font-size: 0.8rem; }
+  .enrich-btn { background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem;
+    padding:0 2px; margin-left:3px; vertical-align:middle; opacity:0.5; transition:opacity .15s; }
+  .enrich-btn:hover:not(:disabled) { opacity:1; }
+  .enrich-btn:disabled { cursor:default; opacity:0.3; }
 
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
@@ -633,6 +637,54 @@ function rankList(ulId, items, nameFn, subFn, countKey = 'n') {
 }
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
+function renderOrigins(ulId, items) {
+  const ul = document.getElementById(ulId);
+  if (!ul) return;
+  if (!items.length) { ul.innerHTML = '<li class="empty">No data</li>'; return; }
+  const max = items[0].n;
+  ul.innerHTML = items.map((it, i) => `<li>
+    <span class="rank-num">${i+1}</span>
+    <span class="rank-name" style="white-space:normal">
+      ${artistLink(it.artist)}<button class="enrich-btn" title="Re-fetch release years for this artist" onclick="enrichArtist(${JSON.stringify(it.artist)},this)">↻</button>
+      <br><span class="rank-sub origin-sub">career started ${it.career_start}</span>
+    </span>
+    <span class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(it.n/max*100)}%"></div></span>
+    <span class="rank-count">${it.n.toLocaleString()}</span>
+  </li>`).join('');
+}
+
+function enrichArtist(artist, btn) {
+  const li = btn.closest('li');
+  const sub = li.querySelector('.origin-sub');
+  btn.disabled = true;
+  btn.textContent = '…';
+  sub.textContent = 'Connecting…';
+
+  const es = new EventSource(`/api/enrich-artist?artist=${encodeURIComponent(artist)}`);
+  es.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.status === 'start') {
+      sub.textContent = d.total === 0 ? 'No missing years found' : `Fetching 0 / ${d.total}…`;
+    } else if (d.status === 'progress') {
+      sub.textContent = `Fetching ${d.done} / ${d.total}…`;
+    } else if (d.status === 'done') {
+      es.close();
+      sub.textContent = d.found > 0
+        ? `Found ${d.found} new year${d.found !== 1 ? 's' : ''} — reloading…`
+        : 'No new years found';
+      btn.textContent = '↻';
+      btn.disabled = false;
+      if (d.found > 0 && currentDecade) setTimeout(() => loadDecade(currentDecade), 1200);
+    }
+  };
+  es.onerror = () => {
+    es.close();
+    sub.textContent = 'Error — try again';
+    btn.textContent = '↻';
+    btn.disabled = false;
+  };
+}
+
 // ── overview ──────────────────────────────────────────────────────────────
 let overviewLoaded = false;
 async function loadOverview() {
@@ -810,6 +862,7 @@ async function loadEraProfile() {
 
 // ── decade browser ────────────────────────────────────────────────────────
 let currentDecadeData = null;
+let currentDecade = null;
 
 function buildDecadeButtons(distribution) {
   const known = new Set(distribution.map(d => d.decade));
@@ -833,6 +886,7 @@ async function loadDecade(decade) {
   showDecadeTab('artists');
   document.getElementById('decadeContent').style.display = 'block';
 
+  currentDecade = decade;
   const data = await fetch(`/api/top-by-decade?decade=${decade}&limit=10`).then(r => r.json());
   currentDecadeData = data;
 
@@ -849,7 +903,7 @@ async function loadDecade(decade) {
   if (data.tracks.length)  rankList('decadeTracks', data.tracks, r => r.track, r => r.artist);
   else document.getElementById('decadeTracks').innerHTML = noData;
 
-  if (data.origins && data.origins.length) rankList('decadeOrigins', data.origins, r => r.artist, r => `career started ${r.career_start}`);
+  if (data.origins && data.origins.length) renderOrigins('decadeOrigins', data.origins);
   else document.getElementById('decadeOrigins').innerHTML = noData;
 
   const pct = data.total > 0 ? ((data.classified / data.total) * 100).toFixed(1) : 0;
