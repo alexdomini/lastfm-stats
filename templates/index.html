@@ -669,14 +669,16 @@ function enrichArtist(artist, btn) {
       sub.textContent = `Fetching ${d.done} / ${d.total}…`;
     } else if (d.status === 'done') {
       es.close();
-      const msg = d.found > 0
-        ? `Found ${d.found} new year${d.found !== 1 ? 's' : ''} — reloading…`
-        : 'Couldn\'t find years — try contributing to MusicBrainz';
-      sub.textContent = msg;
-      sub.style.color = d.found > 0 ? 'var(--acc)' : 'var(--muted)';
       btn.textContent = '↻';
       btn.disabled = false;
-      if (d.found > 0 && currentDecade) setTimeout(() => loadDecade(currentDecade), 1500);
+      if (d.found > 0) {
+        sub.textContent = `Found ${d.found} new year${d.found !== 1 ? 's' : ''} — reloading…`;
+        sub.style.color = 'var(--acc)';
+      } else if (d.total > 0) {
+        sub.textContent = 'Couldn\'t find years — try contributing to MusicBrainz';
+        sub.style.color = 'var(--muted)';
+      }
+      if (currentDecade) setTimeout(() => loadDecade(currentDecade), 1500);
     }
   };
   es.onerror = () => {
