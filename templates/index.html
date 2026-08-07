@@ -664,17 +664,19 @@ function enrichArtist(artist, btn) {
   es.onmessage = e => {
     const d = JSON.parse(e.data);
     if (d.status === 'start') {
-      sub.textContent = d.total === 0 ? 'No missing years found' : `Fetching 0 / ${d.total}…`;
+      sub.textContent = d.total === 0 ? 'All albums already have years' : `Fetching 0 / ${d.total}…`;
     } else if (d.status === 'progress') {
       sub.textContent = `Fetching ${d.done} / ${d.total}…`;
     } else if (d.status === 'done') {
       es.close();
-      sub.textContent = d.found > 0
+      const msg = d.found > 0
         ? `Found ${d.found} new year${d.found !== 1 ? 's' : ''} — reloading…`
-        : 'No new years found';
+        : 'Couldn\'t find years — try contributing to MusicBrainz';
+      sub.textContent = msg;
+      sub.style.color = d.found > 0 ? 'var(--acc)' : 'var(--muted)';
       btn.textContent = '↻';
       btn.disabled = false;
-      if (d.found > 0 && currentDecade) setTimeout(() => loadDecade(currentDecade), 1200);
+      if (d.found > 0 && currentDecade) setTimeout(() => loadDecade(currentDecade), 1500);
     }
   };
   es.onerror = () => {
