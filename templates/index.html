@@ -176,6 +176,24 @@
   .gem-bar { height:5px; border-radius:3px; background:linear-gradient(90deg,var(--acc),var(--acc2)); }
   .gems-empty { color:var(--muted); font-size:.875rem; text-align:center; padding:20px 0; }
 
+  /* ── missing years ── */
+  .my-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .my-row:last-child { border-bottom:none; }
+  .my-rank { width:28px; text-align:right; color:var(--muted); font-size:.8rem; flex-shrink:0; }
+  .my-info { flex:1; min-width:0; overflow:hidden; }
+  .my-artist { font-size:.75rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .my-album { font-size:.875rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .my-plays { font-size:.78rem; color:var(--muted); white-space:nowrap; flex-shrink:0; }
+  .my-input { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:5px 8px;
+    border-radius:6px; font-size:.85rem; width:80px; flex-shrink:0; }
+  .my-input:focus { outline:none; border-color:var(--acc2); }
+  .my-input.invalid { border-color:var(--acc); }
+  .my-save { background:var(--bg3); border:1px solid var(--border); color:var(--text); padding:5px 12px;
+    border-radius:6px; font-size:.8rem; cursor:pointer; flex-shrink:0; transition:background .15s; }
+  .my-save:hover:not(:disabled) { background:#252545; }
+  .my-save:disabled { opacity:.5; cursor:default; }
+  .my-saved { color:#4caf50; font-size:.85rem; flex-shrink:0; white-space:nowrap; }
+
   footer { border-top: 1px solid var(--border); padding: 16px 28px; display: flex; justify-content: center; }
   .lfm-badge { display: inline-flex; align-items: center; gap: 0; border-radius: 5px; overflow: hidden; text-decoration: none; font-size: 0.75rem; font-weight: 600; line-height: 1; }
   .lfm-badge .powered { background: #222; color: #aaa; padding: 5px 8px; }
@@ -251,6 +269,7 @@
   <a href="#" data-section="trending">Trending</a>
   <a href="#" data-section="worldmap">World Map</a>
   <a href="#" data-section="wrapped">Wrapped</a>
+  <a href="#" data-section="missing-years">Missing Years</a>
 </nav>
 
 <main>
@@ -488,6 +507,30 @@
     </div>
     <div class="card"><h2>Monthly Activity</h2>
       <div class="chart-wrap short"><canvas id="chartWrappedMonths"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- MISSING YEARS -->
+<div id="sec-missing-years" class="section">
+  <div class="card">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:20px">
+      <div style="flex:1; min-width:240px">
+        <h2 style="margin-bottom:8px">Missing Release Years</h2>
+        <p style="font-size:0.85rem; color:var(--muted); line-height:1.6">
+          Your most-played albums where no release year could be found automatically.
+          You can enter years here to improve your local stats — or better yet,
+          <a href="https://musicbrainz.org" target="_blank" rel="noopener" style="color:var(--acc2)">contribute to MusicBrainz</a>
+          so the whole internet benefits.
+        </p>
+      </div>
+      <button onclick="loadMissingYears()" id="btnRefreshMissing"
+        style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:6px 14px;border-radius:6px;font-size:.85rem;cursor:pointer;white-space:nowrap;flex-shrink:0">
+        ↻ Refresh
+      </button>
+    </div>
+    <div id="missingYearsList">
+      <p style="color:var(--muted);font-size:.875rem;padding:20px 0">Loading…</p>
     </div>
   </div>
 </div>
@@ -996,6 +1039,7 @@ function onSectionActivate(name) {
   if (name === 'patterns')  loadPatterns();
   if (name === 'trending')  loadTrending();
   if (name === 'worldmap')  loadWorldMap();
+  if (name === 'missing-years') { loadMissingYears(); }
   if (name === 'wrapped') {
     document.getElementById('eraProfileCard').style.display = 'block';
     document.getElementById('decadeBrowserCard').style.display = 'block';
@@ -1531,6 +1575,60 @@ async function startSync() {
   btn.classList.add('syncing');
   document.getElementById('syncProgress').classList.add('visible');
   _syncPoll = setInterval(pollSync, 1200);
+}
+
+// ── missing years ─────────────────────────────────────────────────────────
+async function loadMissingYears() {
+  const container = document.getElementById('missingYearsList');
+  container.innerHTML = '<p style="color:var(--muted);font-size:.875rem;padding:20px 0">Loading…</p>';
+  const data = await fetch('/api/missing-years?limit=100').then(r => r.json());
+  if (!data.length) {
+    container.innerHTML = '<p style="color:var(--muted);text-align:center;padding:40px 0">All your top albums already have release years!</p>';
+    return;
+  }
+  container.innerHTML = data.map((it, i) => `<div class="my-row" id="my-row-${i}">
+    <span class="my-rank">${i + 1}</span>
+    <div class="my-info">
+      <div class="my-artist">${artistLink(it.artist)}</div>
+      <div class="my-album">${albumLink(it.artist, it.album)}</div>
+    </div>
+    <span class="my-plays">${it.plays.toLocaleString()} plays</span>
+    <input class="my-input" type="number" min="1900" max="2030" placeholder="year"
+      data-artist="${esc(it.artist)}" data-album="${esc(it.album)}">
+    <button class="my-save" data-row="${i}" onclick="saveYear(this)">Save</button>
+  </div>`).join('');
+}
+
+async function saveYear(btn) {
+  const row = btn.closest('.my-row');
+  const input = row.querySelector('.my-input');
+  const artist = input.dataset.artist;
+  const album  = input.dataset.album;
+  const year   = parseInt(input.value, 10);
+  if (!year || year < 1900 || year > 2030) {
+    input.classList.add('invalid');
+    input.focus();
+    return;
+  }
+  input.classList.remove('invalid');
+  btn.disabled = true;
+  input.disabled = true;
+  const res = await fetch('/api/set-release-year', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({artist, album, year})
+  }).then(r => r.json());
+  if (res.ok) {
+    const saved = document.createElement('span');
+    saved.className = 'my-saved';
+    saved.textContent = '✓ Saved';
+    btn.replaceWith(saved);
+    row.style.opacity = '0.5';
+  } else {
+    btn.disabled = false;
+    input.disabled = false;
+    input.classList.add('invalid');
+  }
 }
 
 async function pollSync() {

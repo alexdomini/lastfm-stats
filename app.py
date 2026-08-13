@@ -449,6 +449,30 @@ def api_hidden_gems():
     return jsonify(db.hidden_gems(max_listeners=max_listeners))
 
 
+@app.route("/api/missing-years")
+def api_missing_years():
+    limit = int(request.args.get("limit", 100))
+    return jsonify(db.missing_release_years(limit=limit))
+
+
+@app.route("/api/set-release-year", methods=["POST"])
+def api_set_release_year():
+    data = request.json or {}
+    artist = str(data.get("artist", "")).strip()
+    album  = str(data.get("album",  "")).strip()
+    year   = data.get("year")
+    if not artist or not album:
+        return jsonify({"ok": False, "error": "artist and album required"}), 400
+    try:
+        year = int(year)
+        if not (1900 <= year <= 2030):
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "year must be 1900–2030"}), 400
+    db.save_album_release(artist, album, year)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/enrichment-status")
 def api_enrichment_status():
     conn = db.get_conn()

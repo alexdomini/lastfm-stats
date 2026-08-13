@@ -741,6 +741,23 @@ def get_album_profile(artist, album):
     }
 
 
+def missing_release_years(limit=100):
+    """Top scrobbled albums that have no release year in album_releases."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT s.artist, s.album, COUNT(*) AS plays
+        FROM scrobbles s
+        LEFT JOIN album_releases ar ON s.artist = ar.artist AND s.album = ar.album
+        WHERE s.album != ''
+          AND (ar.artist IS NULL OR ar.release_year IS NULL)
+        GROUP BY s.artist, s.album
+        ORDER BY plays DESC
+        LIMIT ?
+    """, (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def _ts_filter(ts_from, ts_to):
     clauses, params = [], []
     if ts_from:
