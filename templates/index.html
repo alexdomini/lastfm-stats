@@ -269,7 +269,7 @@
   <a href="#" data-section="trending">Trending</a>
   <a href="#" data-section="worldmap">World Map</a>
   <a href="#" data-section="wrapped">Wrapped</a>
-  <a href="#" data-section="missing-years">Missing Years</a>
+  <a href="#" data-section="missing-years" id="navMissingYears" style="display:none">Missing Years</a>
 </nav>
 
 <main>
@@ -1350,7 +1350,10 @@ async function loadEnrichStatus() {
   try {
     const s = await fetch('/api/enrichment-status').then(r => r.json());
     if (s.correct)      document.getElementById('dotCorrect').classList.add('done');
-    if (s.releases)     document.getElementById('dotReleases').classList.add('done');
+    if (s.releases) {
+      document.getElementById('dotReleases').classList.add('done');
+      document.getElementById('navMissingYears').style.display = '';
+    }
     if (s.countries)    document.getElementById('dotCountries').classList.add('done');
     if (s.artist_stats) document.getElementById('dotArtistStats').classList.add('done');
     _updateEnrichDot();
