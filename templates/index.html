@@ -1284,21 +1284,15 @@ async function runAllEnrichments() {
 
   const msg = document.getElementById('syncMsg');
   const bar = document.getElementById('syncBar');
-  let anyRan = false;
 
   for (const [post, status, dot, item, label] of steps) {
-    if (document.getElementById(dot).classList.contains('done')) {
-      msg.textContent = `${label} — already done, skipping…`;
-      continue;
-    }
-    anyRan = true;
     const ok = await _startAndAwait(post, status, dot, item);
     if (!ok) break;
   }
 
   document.getElementById('btnRunAll').classList.remove('is-disabled');
   bar.style.width = '100%';
-  msg.textContent = anyRan ? 'All done!' : 'All enrichments are already up to date ✓';
+  msg.textContent = 'All done!';
   setTimeout(() => {
     document.getElementById('syncProgress').classList.remove('visible');
     bar.style.width = '0%';
