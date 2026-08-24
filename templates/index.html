@@ -1241,8 +1241,6 @@ document.addEventListener('click', e => {
 
 // ── run all enrichments ──────────────────────────────────────────────────
 async function _startAndAwait(postUrl, statusUrl, dotId, itemId) {
-  if (document.getElementById(dotId).classList.contains('done')) return true;
-
   _setItemRunning(dotId, itemId, true);
   const res = await fetch(postUrl, { method: 'POST' }).then(r => r.json());
   if (!res.ok) {
