@@ -416,45 +416,32 @@ def get_artist_profile(artist):
 
     conn.close()
 
-    # build album smart scores
+    # build album scores
     by_album = defaultdict(list)
     for r in album_tracks:
         by_album[r["album"]].append(r["plays"])
 
-    today_days = __import__("time").time() / 86400
     albums_scored = []
     for album, plays_list in by_album.items():
         if len(plays_list) < 2:
             continue
+        total   = sum(plays_list)
+        year    = cached.get(album)
+        # score = total plays weighted by track breadth — comparable across all albums
+        # regardless of whether a release year is available
+        score   = round(total * math.log10(len(plays_list) + 1), 2)
         geo_mean = math.exp(sum(math.log(p) for p in plays_list) / len(plays_list))
-        total    = sum(plays_list)
-        year     = cached.get(album)
-        breadth = math.log10(len(plays_list) + 1)
-        if year:
-            release_days = (year - 1970) * 365.25   # approx days since epoch
-            age_days     = max(today_days - release_days, 30)
-            plays_per_month = total / (age_days / 30)
-            smart_score  = round(geo_mean * math.log10(plays_per_month + 1) * breadth, 2)
-            age_label    = f"{year}"
-        else:
-            smart_score = None
-            age_label   = None
         albums_scored.append({
             "album":         album,
             "unique_tracks": len(plays_list),
             "total_plays":   total,
             "geo_mean":      round(geo_mean, 1),
-            "smart_score":   smart_score,
+            "smart_score":   score,
             "release_year":  year,
-            "age_label":     age_label,
+            "age_label":     str(year) if year else None,
         })
 
-    # sort: prefer smart_score if available, else geo_mean weighted by track breadth
-    albums_scored.sort(
-        key=lambda x: x["smart_score"] if x["smart_score"] is not None
-                      else x["geo_mean"] * math.log10(x["unique_tracks"] + 1),
-        reverse=True
-    )
+    albums_scored.sort(key=lambda x: x["smart_score"], reverse=True)
 
     # which albums still need release year fetched
     all_albums   = list(by_album.keys())
