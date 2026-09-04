@@ -429,11 +429,12 @@ def get_artist_profile(artist):
         geo_mean = math.exp(sum(math.log(p) for p in plays_list) / len(plays_list))
         total    = sum(plays_list)
         year     = cached.get(album)
+        breadth = math.log10(len(plays_list) + 1)
         if year:
             release_days = (year - 1970) * 365.25   # approx days since epoch
             age_days     = max(today_days - release_days, 30)
             plays_per_month = total / (age_days / 30)
-            smart_score  = round(geo_mean * math.log10(plays_per_month + 1), 2)
+            smart_score  = round(geo_mean * math.log10(plays_per_month + 1) * breadth, 2)
             age_label    = f"{year}"
         else:
             smart_score = None
@@ -448,9 +449,10 @@ def get_artist_profile(artist):
             "age_label":     age_label,
         })
 
-    # sort: prefer smart_score if available, else geo_mean
+    # sort: prefer smart_score if available, else geo_mean weighted by track breadth
     albums_scored.sort(
-        key=lambda x: x["smart_score"] if x["smart_score"] is not None else x["geo_mean"],
+        key=lambda x: x["smart_score"] if x["smart_score"] is not None
+                      else x["geo_mean"] * math.log10(x["unique_tracks"] + 1),
         reverse=True
     )
 
