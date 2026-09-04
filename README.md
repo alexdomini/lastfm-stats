@@ -19,6 +19,8 @@ A local web dashboard that downloads your complete Last.fm scrobble history and 
 - **Artist profiles** — click any artist name for a full modal: first/last listen, top tracks, album stats, monthly activity chart
 - **Artist name correction** — uses Last.fm's `artist.getCorrection` API to normalize inconsistent spellings in your history
 - **Release year fetching** — bulk-fetches album release years from Last.fm and MusicBrainz, powering the era features
+- **Missing Years** — lists your most-played albums with no release year so you can enter them manually; also links to MusicBrainz to contribute data back to the community
+- **Artists by Country** — world map of your listening by artist origin country, populated via MusicBrainz
 
 ## Requirements
 
